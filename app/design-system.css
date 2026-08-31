@@ -1,0 +1,391 @@
+/*
+ * Seputar Jaminan public design system.
+ * This layer is intentionally separate from Ruwang's internal dashboard system.
+ */
+:root {
+  --type-display-hero: clamp(4.5rem, 6.15vw, 6rem);
+  --type-page-title: clamp(3.5rem, 5.15vw, 4.5rem);
+  --type-section-title: clamp(2.5rem, 4.35vw, 4rem);
+  --type-card-title: clamp(1.75rem, 2.15vw, 2.25rem);
+  --type-body-lead: 1.125rem;
+  --type-body: 1.0625rem;
+  --type-support: 0.9375rem;
+  --type-meta: 0.875rem;
+  --type-index: 0.8125rem;
+
+  --icon-action: 1.5rem;
+  --icon-primary: 1.875rem;
+  --icon-feature: 2rem;
+
+  --radius-control: 0.25rem;
+  --radius-surface: 0.5rem;
+  --radius-modal: 0.75rem;
+
+  --error: #a33a3a;
+  --error-soft: #f7e9e7;
+  --focus-ring: rgba(23, 107, 206, 0.34);
+  --shadow-floating: 0 18px 48px rgba(21, 26, 36, 0.13);
+  --shadow-modal: 0 30px 90px rgba(21, 26, 36, 0.28);
+
+  --motion-fast: 180ms;
+  --motion-standard: 280ms;
+  --motion-slow: 400ms;
+}
+
+body {
+  font-size: var(--type-body);
+  line-height: 1.55;
+}
+
+.brand-signature { font-size: var(--type-index); }
+.brand-signature small { font-size: 8px; }
+.hero-assurance { font-size: var(--type-meta); }
+.hero-caption-copy small { font-size: var(--type-meta); }
+.hero-caption-copy > span { font-size: var(--type-meta); }
+.page-intro-aside span { font-size: var(--type-meta); }
+.catalog-province-filter > button { font-size: var(--type-meta); }
+.asset-contact-panel > small { font-size: var(--type-support); }
+.category-index-list small { font-size: var(--type-support); }
+.footer-brand > p,
+.footer-note p { font-size: var(--type-support); }
+.footer-note > strong { font-size: clamp(1.375rem, 2vw, 1.875rem); }
+.footer-identity-line,
+.footer-nav small,
+.footer-base { font-size: var(--type-index); }
+
+button:focus-visible,
+a:focus-visible,
+input:focus-visible,
+select:focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+
+/* Type hierarchy */
+.hero h1 {
+  font-size: var(--type-display-hero);
+  line-height: 0.92;
+}
+
+:is(.page-intro h1, .bprs-page-intro h1, .bprs-profile-heading h1, .asset-detail-heading h1, .interest-masthead h1, .not-found-copy h1) {
+  font-size: var(--type-page-title);
+  line-height: 0.96;
+  letter-spacing: -0.06em;
+}
+
+:is(
+  .home-section-head h2,
+  .category-index h2,
+  .home-process-head h2,
+  .bprs-marquee-heading h2,
+  .bprs-directory-tools h2,
+  .bprs-published-assets h2,
+  .related-assets-heading h2,
+  .interest-section-heading h2,
+  .interest-conversation-context h2,
+  .interest-guidance-heading h2,
+  .public-data-state h2
+) {
+  font-size: var(--type-section-title);
+  line-height: 1;
+  letter-spacing: -0.052em;
+}
+
+.dossier-title {
+  font-size: clamp(2.75rem, 3.8vw, 3.75rem);
+  line-height: 0.98;
+}
+
+:is(.asset-card h2, .related-asset-copy h3, .bprs-asset-copy strong) {
+  font-size: var(--type-card-title);
+}
+
+:is(.hero-intro, .page-intro-bottom > p, .bprs-page-intro-grid > div > p:first-child, .bprs-profile-description > p:first-child, .interest-masthead-intro > p, .asset-detail-lead, .dossier-description) {
+  font-size: var(--type-body-lead);
+}
+
+:is(
+  .category-index > header > p:last-child,
+  .home-process-list p,
+  .mobile-navigation > p,
+  .directory-disclosure,
+  .bprs-profile-notice p,
+  .asset-detail-verification p,
+  .interest-flow-copy > span,
+  .interest-conversation-context > p:not(.section-kicker),
+  .interest-guidance-grid li,
+  .interest-role-note > p:last-child,
+  .dossier-contact > p,
+  .dossier-contact > small,
+  .public-data-state > div > span,
+  .public-media-fallback span
+) {
+  font-size: var(--type-support) !important;
+}
+
+:is(
+  .section-kicker,
+  .home-section-head > div > p,
+  .category-index > header > p:first-child,
+  .hero-kicker,
+  .page-intro-copy > p,
+  .asset-detail-kicker,
+  .related-assets-heading p,
+  .interest-flow-copy > p,
+  .interest-message-sender,
+  .interest-guidance-grid article > p:first-of-type,
+  .interest-closing > div > p,
+  .asset-contact-panel > div > p,
+  .filter-group legend,
+  .catalog-combobox > label,
+  .bprs-search-field > span:first-child,
+  .bprs-province-field > span:first-child,
+  .dossier-meta-line,
+  .dossier-specs dt,
+  .asset-detail-specs dt,
+  .asset-publisher-copy p,
+  .bprs-profile-facts dt,
+  .bprs-asset-copy small
+) {
+  font-size: var(--type-meta);
+}
+
+:is(
+  .asset-card-folio,
+  .asset-card-meta,
+  .bprs-marquee-note,
+  .catalog-sort > span,
+  .bprs-result-summary,
+  .bprs-index-identity > span,
+  .bprs-index-coverage small,
+  .bprs-index-coverage > span,
+  .bprs-index-stats span,
+  .bprs-profile-mark-wrap > span,
+  .bprs-asset-copy > span,
+  .bprs-asset-status,
+  .asset-gallery-expand,
+  .asset-gallery-disclosure,
+  .asset-detail-status,
+  .asset-publisher-copy span,
+  .asset-detail-update,
+  .related-asset-copy > p,
+  .related-asset-copy > span,
+  .dossier-toolbar button,
+  .dossier-visual-note,
+  .publisher-signature small,
+  .publisher-signature span
+) {
+  font-size: var(--type-meta);
+}
+
+:is(
+  .hero-kicker span,
+  .hero-folio,
+  .hero-progress,
+  .page-intro-index,
+  .page-folio,
+  .asset-photo-code,
+  .category-index-list > a > span,
+  .category-index-list em,
+  .filter-group > button > span,
+  .catalog-empty > span,
+  .bprs-marquee-count,
+  .bprs-index-number,
+  .bprs-asset-folio,
+  .asset-detail-back-row > span,
+  .asset-gallery-caption,
+  .asset-gallery-thumbnail-index,
+  .related-asset-index,
+  .interest-flow-index,
+  .interest-message-meta,
+  .interest-message-preview figcaption,
+  .dossier-photo-folio,
+  .dossier-filmstrip-index,
+  .media-lightbox-header span,
+  .media-lightbox-footer strong
+) {
+  font-size: var(--type-index);
+}
+
+/* Icons: Phosphor regular is the default; active states opt into bold in JSX. */
+:is(.button-primary, .header-cta, .text-link, .home-process-cta, .catalog-next-page, .directory-next-page, .dossier-detail-link, .bprs-profile-notice a, .interest-primary-link, .interest-flow-action, .interest-closing > a) > svg {
+  width: var(--icon-action);
+  height: var(--icon-action);
+}
+
+:is(.asset-whatsapp-cta, .dossier-whatsapp) > svg,
+:is(.hero-arrows, .asset-gallery-arrows, .dossier-photo-arrows, .media-lightbox-arrows) button > svg {
+  width: var(--icon-primary);
+  height: var(--icon-primary);
+}
+
+:is(.home-process-list, .interest-flow-marker) svg {
+  width: var(--icon-feature);
+  height: var(--icon-feature);
+}
+
+/* Selected states use a line and a restrained cobalt wash, not rounded cards. */
+.desktop-nav a[aria-current="page"] {
+  color: var(--iris-deep);
+  font-weight: 650;
+}
+
+.desktop-nav a[aria-current="page"]::after {
+  right: 0;
+  height: 2px;
+  background: var(--iris);
+}
+
+.mobile-navigation nav a[aria-current="page"] {
+  color: #ffffff;
+  border-bottom-color: #9dc8ff;
+}
+
+.mobile-navigation nav a[aria-current="page"] span,
+.mobile-navigation nav a[aria-current="page"] svg {
+  color: #9dc8ff;
+}
+
+.filter-group > button {
+  position: relative;
+}
+
+.filter-group > button::before {
+  content: "";
+  position: absolute;
+  inset: 8px auto 8px 0;
+  width: 2px;
+  background: var(--iris);
+  transform: scaleY(0);
+  transform-origin: center;
+  transition: transform var(--motion-standard) var(--ease-out);
+}
+
+.filter-group > button.is-active {
+  padding-left: 12px;
+  background: var(--iris-soft);
+  color: var(--iris-deep);
+}
+
+.filter-group > button.is-active::before {
+  transform: scaleY(1);
+}
+
+/* Shape and elevation */
+:is(.button-primary, .catalog-search-submit, .bprs-filter-submit, .asset-whatsapp-cta, .dossier-whatsapp, .filter-sheet-apply) {
+  border-radius: var(--radius-control);
+}
+
+.dossier {
+  border-radius: var(--radius-modal);
+  box-shadow: var(--shadow-modal);
+}
+
+.hero-folio,
+.hero-caption {
+  box-shadow: var(--shadow-floating);
+}
+
+.filter-sheet {
+  border-radius: var(--radius-modal) var(--radius-modal) 0 0;
+}
+
+.public-data-state--error {
+  border-color: color-mix(in srgb, var(--error) 34%, var(--rule));
+  background: linear-gradient(90deg, var(--error-soft), var(--surface) 36%);
+}
+
+.public-data-state--error > svg,
+.public-data-state--error p {
+  color: var(--error);
+}
+
+/* Purposeful motion: content arrives once; controls respond only to interaction. */
+@keyframes publicSystemReveal {
+  from { opacity: 0; transform: translateY(14px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+:is(.hero-copy, .page-intro-copy, .bprs-page-intro-grid, .bprs-profile-heading, .asset-detail-information, .interest-masthead > *, .not-found-copy) {
+  animation: publicSystemReveal var(--motion-slow) var(--ease-out) both;
+}
+
+:is(.hero-showcase, .catalog-toolbar, .bprs-directory-tools, .asset-gallery, .home-process-head, .home-process-list) {
+  animation: publicSystemReveal var(--motion-slow) var(--ease-out) 60ms both;
+}
+
+:is(.button-primary, .catalog-search-submit, .bprs-filter-submit, .asset-whatsapp-cta, .dossier-whatsapp) {
+  transition: background-color var(--motion-fast), color var(--motion-fast), transform var(--motion-standard) var(--ease-out);
+}
+
+:is(.button-primary, .catalog-search-submit, .bprs-filter-submit, .asset-whatsapp-cta, .dossier-whatsapp):hover {
+  transform: translateY(-2px);
+}
+
+@media (max-width: 920px) {
+  .hero h1 { font-size: clamp(4rem, 9vw, 5.5rem); }
+}
+
+@media (max-width: 620px) {
+  :root {
+    --type-section-title: clamp(2.5rem, 11vw, 2.75rem);
+    --type-card-title: clamp(1.625rem, 8vw, 2rem);
+  }
+
+  .hero h1,
+  :is(.page-intro h1, .bprs-page-intro h1, .bprs-profile-heading h1, .asset-detail-heading h1, .interest-masthead h1, .not-found-copy h1) {
+    font-size: clamp(2.5rem, 12vw, 3rem);
+    line-height: 0.98;
+    letter-spacing: -0.052em;
+  }
+
+  .dossier-title { font-size: clamp(2.5rem, 11vw, 3rem); }
+  .dossier { border-radius: 0; box-shadow: none; }
+  .dossier-gallery { border-radius: 0; }
+  .mobile-navigation nav strong { font-size: clamp(2.5rem, 11vw, 3rem); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.hero-copy, .page-intro-copy, .bprs-page-intro-grid, .bprs-profile-heading, .asset-detail-information, .interest-masthead > *, .not-found-copy, .hero-showcase, .catalog-toolbar, .bprs-directory-tools, .asset-gallery, .home-process-head, .home-process-list) {
+    animation: none;
+  }
+
+  :is(.button-primary, .catalog-search-submit, .bprs-filter-submit, .asset-whatsapp-cta, .dossier-whatsapp):hover {
+    transform: none;
+  }
+
+  .catalog-combobox-popover[data-entering],
+  .catalog-combobox-popover[data-exiting],
+  .filter-sheet-overlay[data-state="open"],
+  .filter-sheet[data-state="open"] {
+    animation: none;
+  }
+
+  .home-process-list > li:hover > svg,
+  .home-process-cta:hover svg {
+    transform: none;
+  }
+
+  .site-header,
+  .header-inner,
+  .brand-type strong,
+  .brand-signature,
+  .header-cta,
+  .header-cta::after,
+  .header-cta svg,
+  .footer-nav a,
+  .footer-nav svg {
+    transition: none;
+  }
+
+  .mobile-navigation-overlay,
+  .mobile-navigation,
+  .mobile-navigation nav a {
+    animation: none !important;
+  }
+
+  .mobile-navigation nav a {
+    opacity: 1;
+    transform: none;
+  }
+}

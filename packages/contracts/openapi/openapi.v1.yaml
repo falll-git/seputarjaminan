@@ -1,0 +1,994 @@
+openapi: 3.1.0
+info:
+  title: Seputar Jaminan API
+  version: 1.0.0
+  description: >-
+    Kontrak V1 antara instalasi Ruwang dan layanan pusat Seputar Jaminan.
+    Ruwang adalah satu-satunya sumber kebenaran isi katalog. API publik bersifat
+    baca-saja dan tidak menyediakan akun pengunjung.
+servers:
+  - url: https://api.seputarjaminan.com
+    description: Produksi, setelah gate deployment disetujui
+  - url: http://127.0.0.1:4100
+    description: Pengembangan lokal
+tags:
+  - name: Ingest
+  - name: Media
+  - name: Reconciliation
+  - name: Public
+  - name: Operations
+paths:
+  /v1/ingest/events:
+    post:
+      tags: [Ingest]
+      operationId: ingestEvent
+      summary: Menerima satu event idempoten dari Ruwang
+      security:
+        - InstitutionId: []
+          KeyId: []
+          RequestTimestamp: []
+          RequestNonce: []
+          ContentSha256: []
+          Ed25519Signature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/v1/event-envelope.schema.json
+      responses:
+        "200":
+          description: Event diterapkan atau merupakan duplikat identik
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/IngestAcknowledgment"
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+        "500": { $ref: "#/components/responses/InternalError" }
+  /v1/media/upload-sessions:
+    post:
+      tags: [Media]
+      operationId: createMediaUploadSession
+      summary: Membuat instruksi upload berumur pendek
+      security:
+        - InstitutionId: []
+          KeyId: []
+          RequestTimestamp: []
+          RequestNonce: []
+          ContentSha256: []
+          Ed25519Signature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/v1/media-upload-session-request.schema.json
+      responses:
+        "201":
+          description: Sesi upload dibuat
+          content:
+            application/json:
+              schema:
+                $ref: ../schemas/v1/media-upload-session-response.schema.json
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/media/upload-sessions/{sessionId}/content:
+    put:
+      tags: [Media]
+      operationId: uploadMediaContent
+      summary: Mengunggah bytes gambar sanitasi untuk provider filesystem
+      description: >-
+        Route ini adalah implementasi provider filesystem. Provider S3-compatible
+        dapat mengembalikan URL vendor lain dengan kontrak respons sesi yang sama.
+      security:
+        - UploadSessionToken: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema: { type: string, format: binary }
+          image/png:
+            schema: { type: string, format: binary }
+          image/webp:
+            schema: { type: string, format: binary }
+      responses:
+        "204": { description: Bytes diterima untuk validasi lanjutan }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "413": { $ref: "#/components/responses/PayloadTooLarge" }
+        "415": { $ref: "#/components/responses/UnsupportedMediaType" }
+  /v1/media/upload-sessions/{sessionId}/complete:
+    post:
+      tags: [Media]
+      operationId: completeMediaUpload
+      summary: Menutup sesi dan menjadwalkan validasi media
+      security:
+        - InstitutionId: []
+          KeyId: []
+          RequestTimestamp: []
+          RequestNonce: []
+          ContentSha256: []
+          Ed25519Signature: []
+      parameters:
+        - $ref: "#/components/parameters/SessionId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [media_id]
+              properties:
+                media_id: { type: string, format: uuid }
+      responses:
+        "202":
+          description: Validasi media dijadwalkan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaStatus" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "409": { $ref: "#/components/responses/Conflict" }
+  /v1/media/{mediaId}/status:
+    get:
+      tags: [Media]
+      operationId: getMediaStatus
+      summary: Membaca status teknis aman milik instalasi
+      security:
+        - InstitutionId: []
+          KeyId: []
+          RequestTimestamp: []
+          RequestNonce: []
+          ContentSha256: []
+          Ed25519Signature: []
+      parameters:
+        - $ref: "#/components/parameters/MediaId"
+      responses:
+        "200":
+          description: Status media
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/MediaStatus" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/reconciliation/manifests:
+    post:
+      tags: [Reconciliation]
+      operationId: createReconciliationRun
+      summary: Membandingkan manifest publik tanpa data internal
+      security:
+        - InstitutionId: []
+          KeyId: []
+          RequestTimestamp: []
+          RequestNonce: []
+          ContentSha256: []
+          Ed25519Signature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: ../schemas/v1/reconciliation-manifest.schema.json
+      responses:
+        "202":
+          description: Pemeriksaan kesesuaian dijadwalkan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconciliationRun" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/reconciliation/runs/{runId}:
+    get:
+      tags: [Reconciliation]
+      operationId: getReconciliationRun
+      summary: Membaca hasil aman pemeriksaan kesesuaian
+      security:
+        - InstitutionId: []
+          KeyId: []
+          RequestTimestamp: []
+          RequestNonce: []
+          ContentSha256: []
+          Ed25519Signature: []
+      parameters:
+        - $ref: "#/components/parameters/RunId"
+      responses:
+        "200":
+          description: Hasil pemeriksaan kesesuaian
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ReconciliationRun" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/public/assets:
+    get:
+      tags: [Public]
+      operationId: listPublicAssets
+      summary: Daftar aset publik yang benar-benar aktif
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
+        - { name: category, in: query, schema: { type: string } }
+        - { name: subcategory, in: query, schema: { type: string } }
+        - { name: province, in: query, schema: { type: string } }
+        - { name: city_regency, in: query, schema: { type: string } }
+        - { name: institution, in: query, schema: { type: string } }
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [NEWEST, OLDEST]
+            default: NEWEST
+      responses:
+        "200":
+          description: Daftar aset publik
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PublicAssetCard" }
+                  next_cursor:
+                    type: [string, "null"]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/public/assets/{referenceCode}:
+    get:
+      tags: [Public]
+      operationId: getPublicAsset
+      summary: Detail satu aset publik
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/ReferenceCode"
+      responses:
+        "200":
+          description: Detail aset publik
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicAssetDetail" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/public/institutions:
+    get:
+      tags: [Public]
+      operationId: listPublicInstitutions
+      summary: Daftar BPRS penerbit aktif
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/Cursor"
+        - $ref: "#/components/parameters/Limit"
+        - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
+        - { name: province, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
+      responses:
+        "200":
+          description: Daftar BPRS penerbit
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: "#/components/schemas/PublicInstitution" }
+                  next_cursor:
+                    type: [string, "null"]
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/public/institutions/{publicSlug}:
+    get:
+      tags: [Public]
+      operationId: getPublicInstitution
+      summary: Profil publik satu BPRS penerbit
+      security: []
+      parameters:
+        - $ref: "#/components/parameters/PublicSlug"
+      responses:
+        "200":
+          description: Profil BPRS penerbit
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicInstitution" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/public/taxonomy:
+    get:
+      tags: [Public]
+      operationId: getPublicTaxonomy
+      summary: Kategori dan subkategori publik V1
+      security: []
+      responses:
+        "200":
+          description: Taksonomi publik aktif
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/PublicTaxonomy" }
+  /v1/ops/auth/login:
+    post:
+      tags: [Operations]
+      operationId: loginOperations
+      summary: Memeriksa password dan membuat tantangan MFA singkat
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string, minLength: 12 }
+      responses:
+        "200":
+          description: Tantangan MFA dibuat
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [request_id, challenge_token, expires_at]
+                properties:
+                  request_id: { type: string, format: uuid }
+                  challenge_token: { type: string, minLength: 32 }
+                  expires_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/ops/auth/mfa:
+    post:
+      tags: [Operations]
+      operationId: verifyOperationsMfa
+      summary: Memeriksa TOTP atau recovery code dan membuat session privat
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [challenge_token, code]
+              properties:
+                challenge_token: { type: string, minLength: 32 }
+                code: { type: string, minLength: 6 }
+      responses:
+        "200":
+          description: Session ops aktif; cookie HttpOnly dikirim oleh server
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [request_id, csrf_token, expires_at]
+                properties:
+                  request_id: { type: string, format: uuid }
+                  csrf_token: { type: string, minLength: 32 }
+                  expires_at: { type: string, format: date-time }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
+  /v1/ops/auth/logout:
+    post:
+      tags: [Operations]
+      operationId: logoutOperations
+      summary: Mencabut session ops aktif
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      responses:
+        "204": { description: Session dicabut }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+  /v1/ops/institutions:
+    post:
+      tags: [Operations]
+      operationId: onboardInstitution
+      summary: Mendaftarkan institusi dan instalasi secara terkontrol
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [legal_name_internal, public_slug, installation_name, public_key, key_id]
+              properties:
+                legal_name_internal: { type: string, minLength: 1 }
+                public_slug: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+                installation_name: { type: string, minLength: 1 }
+                public_key: { type: string, minLength: 1 }
+                key_id: { type: string, format: uuid }
+      responses:
+        "201":
+          description: Registry institusi dibuat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/ops/institutions/{institutionId}/suspend:
+    post:
+      tags: [Operations]
+      operationId: suspendInstitution
+      summary: Menangguhkan seluruh koneksi dan tampilan publik institusi
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      parameters:
+        - name: institutionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OpsReason" }
+      responses:
+        "200":
+          description: Institusi ditangguhkan tanpa menghapus data
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/ops/institutions/{institutionId}/reactivate:
+    post:
+      tags: [Operations]
+      operationId: reactivateInstitution
+      summary: Mengaktifkan kembali institusi setelah pemeriksaan
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      parameters:
+        - name: institutionId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Institusi diaktifkan kembali
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/ops/installations/{installationId}/keys/rotate:
+    post:
+      tags: [Operations]
+      operationId: rotateInstallationKey
+      summary: Merotasi public key instalasi
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [key_id, public_key]
+              properties:
+                key_id: { type: string, format: uuid }
+                public_key: { type: string, minLength: 1 }
+                valid_until: { type: [string, "null"], format: date-time }
+      responses:
+        "200":
+          description: Rotasi key dicatat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/ops/installations/{installationId}/suspend:
+    post:
+      tags: [Operations]
+      operationId: suspendInstallation
+      summary: Menangguhkan instalasi tanpa menghapus data
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OpsReason" }
+      responses:
+        "200":
+          description: Instalasi ditangguhkan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/ops/installations/{installationId}/reactivate:
+    post:
+      tags: [Operations]
+      operationId: reactivateInstallation
+      summary: Mengaktifkan kembali instalasi setelah pemeriksaan
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+      responses:
+        "200":
+          description: Instalasi diaktifkan kembali
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/ops/installations/{installationId}/keys/{keyId}/revoke:
+    post:
+      tags: [Operations]
+      operationId: revokeInstallationKey
+      summary: Mencabut public key instalasi seketika
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      parameters:
+        - $ref: "#/components/parameters/InstallationId"
+        - name: keyId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OpsReason" }
+      responses:
+        "200":
+          description: Key dicabut
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/ops/quarantines:
+    post:
+      tags: [Operations]
+      operationId: quarantineSubject
+      summary: Menyembunyikan subject tanpa mengubah isi dari Ruwang
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [institution_id, subject_type, subject_id, reason_code]
+              properties:
+                institution_id: { type: string, format: uuid }
+                subject_type:
+                  type: string
+                  enum: [PROFILE, PUBLICATION, MEDIA]
+                subject_id: { type: string, format: uuid }
+                reason_code: { type: string, pattern: "^[A-Z][A-Z0-9_]*$" }
+                safe_detail: { type: [string, "null"] }
+      responses:
+        "201":
+          description: Karantina dicatat
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
+  /v1/ops/quarantines/{quarantineId}/resolve:
+    post:
+      tags: [Operations]
+      operationId: resolveQuarantine
+      summary: Menutup karantina setelah verifikasi tanpa mengedit konten
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      parameters:
+        - name: quarantineId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        "200":
+          description: Karantina diselesaikan
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "404": { $ref: "#/components/responses/NotFound" }
+  /v1/ops/health:
+    get:
+      tags: [Operations]
+      operationId: getOperationsHealth
+      summary: Membaca health aman untuk operasional pusat
+      security:
+        - OpsSession: []
+      responses:
+        "200":
+          description: Status dependency dan lag tanpa credential
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [status, checked_at, dependencies]
+                properties:
+                  status: { type: string, enum: [OK, DEGRADED] }
+                  checked_at: { type: string, format: date-time }
+                  dependencies:
+                    type: object
+                    additionalProperties:
+                      type: string
+                      enum: [OK, DEGRADED, UNAVAILABLE]
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+components:
+  securitySchemes:
+    InstitutionId:
+      type: apiKey
+      in: header
+      name: X-SJ-Institution-Id
+    KeyId:
+      type: apiKey
+      in: header
+      name: X-SJ-Key-Id
+    RequestTimestamp:
+      type: apiKey
+      in: header
+      name: X-SJ-Timestamp
+    RequestNonce:
+      type: apiKey
+      in: header
+      name: X-SJ-Nonce
+    ContentSha256:
+      type: apiKey
+      in: header
+      name: X-SJ-Content-SHA256
+    Ed25519Signature:
+      type: apiKey
+      in: header
+      name: X-SJ-Signature
+    UploadSessionToken:
+      type: apiKey
+      in: header
+      name: X-SJ-Upload-Token
+    OpsSession:
+      type: apiKey
+      in: cookie
+      name: sj_ops_session
+    CsrfToken:
+      type: apiKey
+      in: header
+      name: X-CSRF-Token
+  parameters:
+    SessionId:
+      name: sessionId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    MediaId:
+      name: mediaId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    RunId:
+      name: runId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    ReferenceCode:
+      name: referenceCode
+      in: path
+      required: true
+      schema: { type: string, pattern: "^SJ-[A-Z0-9]{8}$" }
+    PublicSlug:
+      name: publicSlug
+      in: path
+      required: true
+      schema: { type: string, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" }
+    InstallationId:
+      name: installationId
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    Cursor:
+      name: cursor
+      in: query
+      schema: { type: string }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 24 }
+  schemas:
+    IngestAcknowledgment:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, event_id, active_aggregate_version, acknowledged_at]
+      properties:
+        request_id: { type: string, format: uuid }
+        status: { type: string, enum: [APPLIED, DUPLICATE] }
+        event_id: { type: string, format: uuid }
+        active_aggregate_version: { type: integer, minimum: 1 }
+        acknowledged_at: { type: string, format: date-time }
+    MediaStatus:
+      type: object
+      additionalProperties: false
+      required: [request_id, media_id, status, checked_at]
+      properties:
+        request_id: { type: string, format: uuid }
+        media_id: { type: string, format: uuid }
+        status: { type: string, enum: [AWAITING_UPLOAD, UPLOADED, PROCESSING, READY, REJECTED, REVOKED, QUARANTINED, EXPIRED] }
+        rejection_code: { type: [string, "null"], pattern: "^[A-Z][A-Z0-9_]*$" }
+        checked_at: { type: string, format: date-time }
+    ReconciliationRun:
+      type: object
+      additionalProperties: false
+      required: [request_id, run_id, status, count_checked, count_mismatch, mismatches]
+      properties:
+        request_id: { type: string, format: uuid }
+        run_id: { type: string, format: uuid }
+        status: { type: string, enum: [PENDING, RUNNING, COMPLETED, FAILED] }
+        count_checked: { type: integer, minimum: 0 }
+        count_mismatch: { type: integer, minimum: 0 }
+        mismatches:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [aggregate_id, code, recommended_action]
+            properties:
+              aggregate_id: { type: string, format: uuid }
+              code: { type: string, pattern: "^[A-Z][A-Z0-9_]*$" }
+              recommended_action:
+                type: string
+                enum: [RESEND_SNAPSHOT, SEND_UNPUBLISH, CHECK_CREDENTIAL, CONTACT_OPERATIONS]
+    PublicLocation:
+      type: object
+      additionalProperties: false
+      required: [city_regency, province]
+      properties:
+        city_regency: { type: string, minLength: 1 }
+        province: { type: string, minLength: 1 }
+    PublicMedia:
+      type: object
+      additionalProperties: false
+      required: [url, width, height, alt_text]
+      properties:
+        url: { type: string, format: uri }
+        width: { type: integer, minimum: 1 }
+        height: { type: integer, minimum: 1 }
+        alt_text: { type: string, minLength: 1 }
+    PublicInstitutionSummary:
+      type: object
+      additionalProperties: false
+      required: [public_slug, public_name, public_mark_url]
+      properties:
+        public_slug: { type: string }
+        public_name: { type: string, minLength: 1 }
+        public_mark_url: { type: string, format: uri }
+    PublicAssetCard:
+      type: object
+      additionalProperties: false
+      required: [reference_code, title, category, subcategory, location, cover, institution, availability, photo_count, public_updated_at]
+      properties:
+        reference_code: { type: string, pattern: "^SJ-[A-Z0-9]{8}$" }
+        title: { type: string, minLength: 1 }
+        category: { type: string }
+        subcategory: { type: string }
+        location: { $ref: "#/components/schemas/PublicLocation" }
+        cover: { $ref: "#/components/schemas/PublicMedia" }
+        institution: { $ref: "#/components/schemas/PublicInstitutionSummary" }
+        availability: { type: string, enum: [AVAILABLE] }
+        photo_count: { type: integer, minimum: 1, maximum: 10 }
+        public_updated_at: { type: string, format: date-time }
+    PublicAssetDetail:
+      type: object
+      additionalProperties: false
+      required: [reference_code, title, category, subcategory, location, cover, institution, availability, photo_count, public_updated_at, description, attributes, media, whatsapp_url]
+      properties:
+        reference_code: { type: string, pattern: "^SJ-[A-Z0-9]{8}$" }
+        title: { type: string, minLength: 1 }
+        category: { type: string }
+        subcategory: { type: string }
+        location: { $ref: "#/components/schemas/PublicLocation" }
+        cover: { $ref: "#/components/schemas/PublicMedia" }
+        institution: { $ref: "#/components/schemas/PublicInstitutionSummary" }
+        availability: { type: string, enum: [AVAILABLE] }
+        photo_count: { type: integer, minimum: 1, maximum: 10 }
+        public_updated_at: { type: string, format: date-time }
+        description: { type: string, minLength: 1 }
+        attributes:
+          type: object
+          additionalProperties:
+            oneOf:
+              - { type: string }
+              - { type: number }
+        media:
+          type: array
+          minItems: 1
+          maxItems: 10
+          items: { $ref: "#/components/schemas/PublicMedia" }
+        whatsapp_url: { type: string, format: uri }
+    PublicInstitution:
+      type: object
+      additionalProperties: false
+      required: [public_slug, public_name, public_mark_url, short_description, office_city_regency, office_province, published_asset_count]
+      properties:
+        public_slug: { type: string }
+        public_name: { type: string, minLength: 1 }
+        public_mark_url: { type: string, format: uri }
+        short_description: { type: string, minLength: 1 }
+        office_city_regency: { type: string, minLength: 1 }
+        office_province: { type: string, minLength: 1 }
+        published_asset_count: { type: integer, minimum: 0 }
+    PublicTaxonomy:
+      type: object
+      additionalProperties: false
+      required: [version, categories, vocabularies]
+      properties:
+        version: { const: 1 }
+        categories:
+          type: object
+          additionalProperties:
+            type: array
+            items: { type: string }
+        vocabularies:
+          type: object
+          additionalProperties: false
+          required: [public_condition, contour, road_access, public_usage, transmission, fuel_type]
+          properties:
+            public_condition:
+              type: array
+              items: { type: string, enum: [SANGAT_BAIK, BAIK, CUKUP, PERLU_PERBAIKAN] }
+            contour:
+              type: array
+              items: { type: string, enum: [DATAR, MIRING, BERKONTUR] }
+            road_access:
+              type: array
+              items: { type: string, enum: [RODA_DUA, MOBIL, TRUK] }
+            public_usage:
+              type: array
+              items: { type: string, enum: [HUNIAN, KOMERSIAL, PERKANTORAN, PERGUDANGAN, INDUSTRI, SERBAGUNA] }
+            transmission:
+              type: array
+              items: { type: string, enum: [MANUAL, OTOMATIS] }
+            fuel_type:
+              type: array
+              items: { type: string, enum: [BENSIN, DIESEL, LISTRIK, HIBRIDA, GAS] }
+    OpsReason:
+      type: object
+      additionalProperties: false
+      required: [reason_code]
+      properties:
+        reason_code: { type: string, pattern: "^[A-Z][A-Z0-9_]*$" }
+        safe_detail: { type: [string, "null"] }
+    OpsActionResult:
+      type: object
+      additionalProperties: false
+      required: [request_id, status, subject_id, recorded_at]
+      properties:
+        request_id: { type: string, format: uuid }
+        status: { type: string, pattern: "^[A-Z][A-Z0-9_]*$" }
+        subject_id: { type: string, format: uuid }
+        recorded_at: { type: string, format: date-time }
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required: [request_id, code, message, retryable]
+      properties:
+        request_id: { type: string, format: uuid }
+        code: { type: string, pattern: "^[A-Z][A-Z0-9_]*$" }
+        message: { type: string, minLength: 1 }
+        retryable: { type: boolean }
+        retry_after_seconds: { type: [integer, "null"], minimum: 0 }
+        documentation_code: { type: [string, "null"] }
+        field_errors:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [field, code, message]
+            properties:
+              field: { type: string }
+              code: { type: string, pattern: "^[A-Z][A-Z0-9_]*$" }
+              message: { type: string }
+  responses:
+    BadRequest:
+      description: Request tidak dapat diproses
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unauthorized:
+      description: Credential atau signature tidak sah
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Forbidden:
+      description: Akses tidak diizinkan
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    NotFound:
+      description: Resource tidak tersedia
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Conflict:
+      description: Event, versi, atau state berkonflik
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    PayloadTooLarge:
+      description: Batas payload terlampaui
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    UnsupportedMediaType:
+      description: Format media tidak didukung
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    Unprocessable:
+      description: Field atau aturan bisnis tidak valid
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    TooManyRequests:
+      description: Terlalu banyak request
+      headers:
+        Retry-After:
+          schema: { type: integer, minimum: 0 }
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }
+    InternalError:
+      description: Gangguan internal yang aman untuk dicoba ulang
+      content:
+        application/json:
+          schema: { $ref: "#/components/schemas/ErrorResponse" }

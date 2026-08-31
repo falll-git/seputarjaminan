@@ -1,0 +1,18 @@
+{
+  "name": "@seputarjaminan/config",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./server": {
+      "types": "./src/server.d.ts",
+      "default": "./src/server.mjs"
+    }
+  },
+  "scripts": {
+    "test": "node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "zod": "4.4.3"
+  }
+}

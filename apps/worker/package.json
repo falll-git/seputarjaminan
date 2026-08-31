@@ -1,0 +1,27 @@
+{
+  "name": "@seputarjaminan/worker",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "esbuild src/server.ts --bundle --platform=node --format=esm --packages=external --outfile=dist/server.mjs",
+    "typecheck": "tsc --noEmit",
+    "test": "tsx --test tests/unit/*.test.ts",
+    "start": "node dist/server.mjs",
+    "dev": "tsx watch src/server.ts"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "7.9.1",
+    "@prisma/client": "7.9.1",
+    "@seputarjaminan/config": "1.0.0",
+    "@seputarjaminan/storage": "1.0.0",
+    "pino": "10.3.1",
+    "sharp": "0.35.3"
+  },
+  "devDependencies": {
+    "@types/node": "22.19.19",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.12",
+    "typescript": "5.9.3"
+  }
+}

@@ -1,0 +1,678 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum InstitutionState {
+  ACTIVE
+  SUSPENDED
+
+  @@map("institution_state")
+}
+
+enum InstallationState {
+  PENDING
+  ACTIVE
+  SUSPENDED
+  REVOKED
+
+  @@map("installation_state")
+}
+
+enum KeyState {
+  ACTIVE
+  ROTATING
+  REVOKED
+  EXPIRED
+
+  @@map("key_state")
+}
+
+enum PublicProfileState {
+  ACTIVE
+  QUARANTINED
+  HIDDEN
+
+  @@map("public_profile_state")
+}
+
+enum CentralContactState {
+  VERIFIED
+  REVOKED
+
+  @@map("central_contact_state")
+}
+
+enum CentralPublicationState {
+  PUBLISHED
+  UNPUBLISHED
+  ARCHIVED
+  QUARANTINED
+
+  @@map("central_publication_state")
+}
+
+enum PublicAvailability {
+  AVAILABLE
+  UNAVAILABLE
+
+  @@map("public_availability")
+}
+
+enum AssetCategory {
+  TANAH
+  BANGUNAN
+  MESIN_PERALATAN
+  KENDARAAN
+
+  @@map("asset_category")
+}
+
+enum MediaState {
+  AWAITING_UPLOAD
+  UPLOADED
+  PROCESSING
+  READY
+  REJECTED
+  REVOKED
+  QUARANTINED
+  EXPIRED
+
+  @@map("media_state")
+}
+
+enum StorageBackend {
+  FILESYSTEM
+  S3_COMPATIBLE
+
+  @@map("storage_backend")
+}
+
+enum MediaPurpose {
+  PUBLICATION_IMAGE
+  BPRS_PUBLIC_MARK
+
+  @@map("media_purpose")
+}
+
+enum IngestState {
+  RECEIVED
+  APPLIED
+  DUPLICATE
+  REJECTED
+
+  @@map("ingest_state")
+}
+
+enum QuarantineState {
+  ACTIVE
+  RESOLVED
+
+  @@map("quarantine_state")
+}
+
+enum ReconciliationState {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+
+  @@map("reconciliation_state")
+}
+
+enum CentralJobState {
+  PENDING
+  PROCESSING
+  RETRY_WAIT
+  COMPLETED
+  DEAD_LETTER
+
+  @@map("central_job_state")
+}
+
+enum OpsUserState {
+  INVITED
+  ACTIVE
+  LOCKED
+  REVOKED
+
+  @@map("ops_user_state")
+}
+
+model Institution {
+  id                String                    @id @default(uuid()) @db.Uuid
+  legalNameInternal String                    @map("legal_name_internal")
+  publicSlug        String                    @unique @map("public_slug")
+  state             InstitutionState          @default(ACTIVE)
+  onboardedAt       DateTime                  @default(now()) @map("onboarded_at") @db.Timestamptz(3)
+  suspendedAt       DateTime?                 @map("suspended_at") @db.Timestamptz(3)
+  createdAt         DateTime                  @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt         DateTime                  @updatedAt @map("updated_at") @db.Timestamptz(3)
+  installations     InstitutionInstallation[]
+  profile           BprsProfile?
+  contacts          WhatsappContact[]
+  publications      Publication[]
+  mediaObjects      MediaObject[]
+  ingestEvents      IngestEvent[]
+  aggregateCursors  AggregateCursor[]
+  uploadSessions    MediaUploadSession[]
+  quarantines       QuarantineRecord[]
+  reconciliations   ReconciliationRun[]
+  centralJobs       CentralJob[]
+
+  @@map("institutions")
+}
+
+model InstitutionInstallation {
+  id                   String              @id @default(uuid()) @db.Uuid
+  institutionId        String              @map("institution_id") @db.Uuid
+  installationName     String              @map("installation_name")
+  sourceDomainMetadata Json?               @map("source_domain_metadata")
+  state                InstallationState   @default(PENDING)
+  contractVersion      Int                 @default(1) @map("contract_version")
+  lastSeenAt           DateTime?           @map("last_seen_at") @db.Timestamptz(3)
+  createdAt            DateTime            @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  institution          Institution         @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  keys                 InstitutionKey[]
+  ingestEvents         IngestEvent[]
+  reconciliations      ReconciliationRun[]
+
+  @@unique([institutionId, id])
+  @@unique([institutionId, installationName])
+  @@index([state, lastSeenAt])
+  @@map("institution_installations")
+}
+
+model InstitutionKey {
+  keyId          String                  @id @default(uuid()) @map("key_id") @db.Uuid
+  institutionId  String                  @map("institution_id") @db.Uuid
+  installationId String                  @map("installation_id") @db.Uuid
+  publicKey      String                  @map("public_key") @db.Text
+  algorithm      String                  @default("ED25519")
+  state          KeyState                @default(ACTIVE)
+  validFrom      DateTime                @default(now()) @map("valid_from") @db.Timestamptz(3)
+  validUntil     DateTime?               @map("valid_until") @db.Timestamptz(3)
+  revokedAt      DateTime?               @map("revoked_at") @db.Timestamptz(3)
+  createdAt      DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  installation   InstitutionInstallation @relation(fields: [institutionId, installationId], references: [institutionId, id], onDelete: Restrict)
+  nonces         RequestNonce[]
+  ingestEvents   IngestEvent[]
+
+  @@unique([institutionId, keyId])
+  @@index([installationId, state])
+  @@map("institution_keys")
+}
+
+model RequestNonce {
+  id        String         @id @default(uuid()) @db.Uuid
+  keyId     String         @map("key_id") @db.Uuid
+  nonceHash String         @map("nonce_hash") @db.Char(64)
+  expiresAt DateTime       @map("expires_at") @db.Timestamptz(3)
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  key       InstitutionKey @relation(fields: [keyId], references: [keyId], onDelete: Cascade)
+
+  @@unique([keyId, nonceHash])
+  @@index([expiresAt])
+  @@map("request_nonces")
+}
+
+model BprsProfile {
+  id                String             @id @default(uuid()) @db.Uuid
+  institutionId     String             @unique @map("institution_id") @db.Uuid
+  sourceProfileId   String             @map("source_profile_id") @db.Uuid
+  sourceVersion     Int                @map("source_version")
+  publicName        String             @map("public_name")
+  publicMarkMediaId String             @map("public_mark_media_id") @db.Uuid
+  shortDescription  String             @map("short_description") @db.Text
+  officeCityRegency String             @map("office_city_regency")
+  officeProvince    String             @map("office_province")
+  profileUpdatedAt  DateTime           @map("profile_updated_at") @db.Timestamptz(3)
+  payloadChecksum   String             @map("payload_checksum") @db.Char(64)
+  state             PublicProfileState @default(ACTIVE)
+  receivedAt        DateTime           @default(now()) @map("received_at") @db.Timestamptz(3)
+  updatedAt         DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  institution       Institution        @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  publicMark        MediaObject        @relation("ProfilePublicMark", fields: [institutionId, publicMarkMediaId], references: [institutionId, id], onDelete: Restrict)
+  publications      Publication[]
+
+  @@unique([institutionId, id])
+  @@unique([institutionId, sourceProfileId])
+  @@index([state, updatedAt])
+  @@map("bprs_profiles")
+}
+
+model WhatsappContact {
+  id                     String              @id @default(uuid()) @db.Uuid
+  institutionId          String              @map("institution_id") @db.Uuid
+  sourceContactId        String              @map("source_contact_id") @db.Uuid
+  sourceVersion          Int                 @map("source_version")
+  phoneE164              String              @map("phone_e164")
+  messageTemplateVersion Int                 @map("message_template_version")
+  state                  CentralContactState @default(VERIFIED)
+  verifiedAt             DateTime            @map("verified_at") @db.Timestamptz(3)
+  revokedAt              DateTime?           @map("revoked_at") @db.Timestamptz(3)
+  payloadChecksum        String              @map("payload_checksum") @db.Char(64)
+  receivedAt             DateTime            @default(now()) @map("received_at") @db.Timestamptz(3)
+  updatedAt              DateTime            @updatedAt @map("updated_at") @db.Timestamptz(3)
+  institution            Institution         @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  publications           Publication[]
+
+  @@unique([institutionId, id])
+  @@unique([institutionId, sourceContactId])
+  @@index([institutionId, state])
+  @@map("whatsapp_contacts")
+}
+
+model Publication {
+  id                   String                  @id @default(uuid()) @db.Uuid
+  institutionId        String                  @map("institution_id") @db.Uuid
+  sourcePublicationId  String                  @map("source_publication_id") @db.Uuid
+  publicReferenceCode  String                  @unique @map("public_reference_code")
+  aggregateVersion     Int                     @map("aggregate_version")
+  profileId            String                  @map("profile_id") @db.Uuid
+  whatsappContactId    String                  @map("whatsapp_contact_id") @db.Uuid
+  taxonomyVersion      Int                     @map("taxonomy_version")
+  subcategoryCode      String                  @map("subcategory_code")
+  category             AssetCategory
+  title                String
+  description          String                  @db.Text
+  cityRegency          String                  @map("city_regency")
+  province             String
+  availability         PublicAvailability      @default(AVAILABLE)
+  state                CentralPublicationState @default(PUBLISHED)
+  publishedAt          DateTime                @map("published_at") @db.Timestamptz(3)
+  publicUpdatedAt      DateTime                @map("public_updated_at") @db.Timestamptz(3)
+  lastConfirmedAt      DateTime                @map("last_confirmed_at") @db.Timestamptz(3)
+  nextReconfirmationAt DateTime                @map("next_reconfirmation_at") @db.Timestamptz(3)
+  payloadChecksum      String                  @map("payload_checksum") @db.Char(64)
+  unpublishedAt        DateTime?               @map("unpublished_at") @db.Timestamptz(3)
+  archivedAt           DateTime?               @map("archived_at") @db.Timestamptz(3)
+  createdAt            DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt            DateTime                @updatedAt @map("updated_at") @db.Timestamptz(3)
+  institution          Institution             @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  profile              BprsProfile             @relation(fields: [institutionId, profileId], references: [institutionId, id], onDelete: Restrict)
+  whatsappContact      WhatsappContact         @relation(fields: [institutionId, whatsappContactId], references: [institutionId, id], onDelete: Restrict)
+  landDetail           LandDetail?
+  buildingDetail       BuildingDetail?
+  machineDetail        MachineDetail?
+  vehicleDetail        VehicleDetail?
+  media                PublicationMedia[]
+  searchDocument       PublicSearchDocument?
+
+  @@unique([institutionId, id])
+  @@unique([institutionId, sourcePublicationId])
+  @@index([state, publicUpdatedAt(sort: Desc), id])
+  @@index([province, cityRegency, category, state])
+  @@index([institutionId, state])
+  @@index([nextReconfirmationAt, state])
+  @@map("publications")
+}
+
+model LandDetail {
+  publicationId String      @id @map("publication_id") @db.Uuid
+  institutionId String      @map("institution_id") @db.Uuid
+  landAreaM2    Decimal     @map("land_area_m2") @db.Decimal(14, 2)
+  contour       String?
+  roadAccess    String?     @map("road_access")
+  publication   Publication @relation(fields: [institutionId, publicationId], references: [institutionId, id], onDelete: Cascade)
+
+  @@unique([institutionId, publicationId])
+  @@index([institutionId])
+  @@map("land_details")
+}
+
+model BuildingDetail {
+  publicationId  String      @id @map("publication_id") @db.Uuid
+  institutionId  String      @map("institution_id") @db.Uuid
+  landAreaM2     Decimal?    @map("land_area_m2") @db.Decimal(14, 2)
+  buildingAreaM2 Decimal     @map("building_area_m2") @db.Decimal(14, 2)
+  floorCount     Int?        @map("floor_count")
+  publicUsage    String?     @map("public_usage")
+  publication    Publication @relation(fields: [institutionId, publicationId], references: [institutionId, id], onDelete: Cascade)
+
+  @@unique([institutionId, publicationId])
+  @@index([institutionId])
+  @@map("building_details")
+}
+
+model MachineDetail {
+  publicationId       String      @id @map("publication_id") @db.Uuid
+  institutionId       String      @map("institution_id") @db.Uuid
+  brandOrManufacturer String?     @map("brand_or_manufacturer")
+  modelOrType         String      @map("model_or_type")
+  manufactureYear     Int?        @map("manufacture_year")
+  publicCapacity      String?     @map("public_capacity")
+  publicCondition     String      @map("public_condition")
+  publication         Publication @relation(fields: [institutionId, publicationId], references: [institutionId, id], onDelete: Cascade)
+
+  @@unique([institutionId, publicationId])
+  @@index([institutionId])
+  @@map("machine_details")
+}
+
+model VehicleDetail {
+  publicationId   String      @id @map("publication_id") @db.Uuid
+  institutionId   String      @map("institution_id") @db.Uuid
+  brand           String
+  modelOrType     String      @map("model_or_type")
+  manufactureYear Int?        @map("manufacture_year")
+  transmission    String?
+  fuelType        String?     @map("fuel_type")
+  mileageKm       Decimal?    @map("mileage_km") @db.Decimal(14, 2)
+  publicCondition String      @map("public_condition")
+  publication     Publication @relation(fields: [institutionId, publicationId], references: [institutionId, id], onDelete: Cascade)
+
+  @@unique([institutionId, publicationId])
+  @@index([institutionId])
+  @@map("vehicle_details")
+}
+
+model MediaObject {
+  id                  String               @id @default(uuid()) @db.Uuid
+  institutionId       String               @map("institution_id") @db.Uuid
+  sourceMediaId       String               @map("source_media_id") @db.Uuid
+  sourcePublicationId String?              @map("source_publication_id") @db.Uuid
+  logicalObjectKey    String               @map("logical_object_key")
+  storageBackend      StorageBackend       @map("storage_backend")
+  purpose             MediaPurpose
+  state               MediaState           @default(AWAITING_UPLOAD)
+  sha256              String               @db.Char(64)
+  detectedMime        String               @map("detected_mime")
+  sizeBytes           BigInt               @map("size_bytes")
+  width               Int
+  height              Int
+  scanResult          String?              @map("scan_result")
+  derivativeMetadata  Json?                @map("derivative_metadata")
+  deliveryObjectKey   String?              @map("delivery_object_key")
+  deliveryMime        String?              @map("delivery_mime")
+  deliverySha256      String?              @map("delivery_sha256") @db.Char(64)
+  deliverySizeBytes   BigInt?              @map("delivery_size_bytes")
+  deliveryWidth       Int?                 @map("delivery_width")
+  deliveryHeight      Int?                 @map("delivery_height")
+  readyAt             DateTime?            @map("ready_at") @db.Timestamptz(3)
+  revokedAt           DateTime?            @map("revoked_at") @db.Timestamptz(3)
+  deletionEligibleAt  DateTime?            @map("deletion_eligible_at") @db.Timestamptz(3)
+  createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
+  institution         Institution          @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  profileMarks        BprsProfile[]        @relation("ProfilePublicMark")
+  publicationMedia    PublicationMedia[]
+  uploadSessions      MediaUploadSession[]
+
+  @@unique([institutionId, id])
+  @@unique([institutionId, sourceMediaId])
+  @@index([institutionId, state])
+  @@index([state, createdAt])
+  @@map("media_objects")
+}
+
+model PublicationMedia {
+  institutionId String      @map("institution_id") @db.Uuid
+  publicationId String      @map("publication_id") @db.Uuid
+  mediaObjectId String      @map("media_object_id") @db.Uuid
+  sortOrder     Int         @map("sort_order")
+  isCover       Boolean     @default(false) @map("is_cover")
+  altText       String      @map("alt_text")
+  publication   Publication @relation(fields: [institutionId, publicationId], references: [institutionId, id], onDelete: Cascade)
+  mediaObject   MediaObject @relation(fields: [institutionId, mediaObjectId], references: [institutionId, id], onDelete: Restrict)
+
+  @@id([publicationId, mediaObjectId])
+  @@unique([publicationId, sortOrder])
+  @@index([institutionId, mediaObjectId])
+  @@map("publication_media")
+}
+
+model MediaUploadSession {
+  id             String      @id @default(uuid()) @db.Uuid
+  institutionId  String      @map("institution_id") @db.Uuid
+  mediaObjectId  String      @map("media_object_id") @db.Uuid
+  tokenHash      String      @unique @map("token_hash") @db.Char(64)
+  expectedSha256 String      @map("expected_sha256") @db.Char(64)
+  expectedMime   String      @map("expected_mime")
+  maxBytes       BigInt      @map("max_bytes")
+  expiresAt      DateTime    @map("expires_at") @db.Timestamptz(3)
+  consumedAt     DateTime?   @map("consumed_at") @db.Timestamptz(3)
+  createdAt      DateTime    @default(now()) @map("created_at") @db.Timestamptz(3)
+  institution    Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  mediaObject    MediaObject @relation(fields: [institutionId, mediaObjectId], references: [institutionId, id], onDelete: Cascade)
+
+  @@index([institutionId, expiresAt])
+  @@map("media_upload_sessions")
+}
+
+model IngestEvent {
+  eventId          String                  @id @map("event_id") @db.Uuid
+  institutionId    String                  @map("institution_id") @db.Uuid
+  installationId   String                  @map("installation_id") @db.Uuid
+  keyId            String                  @map("key_id") @db.Uuid
+  aggregateType    String                  @map("aggregate_type")
+  aggregateId      String                  @map("aggregate_id") @db.Uuid
+  aggregateVersion Int                     @map("aggregate_version")
+  eventType        String                  @map("event_type")
+  schemaVersion    Int                     @map("schema_version")
+  payloadChecksum  String                  @map("payload_checksum") @db.Char(64)
+  payload          Json
+  requestTimestamp DateTime                @map("request_timestamp") @db.Timestamptz(3)
+  nonceHash        String                  @map("nonce_hash") @db.Char(64)
+  state            IngestState             @default(RECEIVED)
+  errorCode        String?                 @map("error_code")
+  receivedAt       DateTime                @default(now()) @map("received_at") @db.Timestamptz(3)
+  processedAt      DateTime?               @map("processed_at") @db.Timestamptz(3)
+  institution      Institution             @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  installation     InstitutionInstallation @relation(fields: [institutionId, installationId], references: [institutionId, id], onDelete: Restrict)
+  key              InstitutionKey          @relation(fields: [institutionId, keyId], references: [institutionId, keyId], onDelete: Restrict)
+
+  @@unique([institutionId, aggregateId, aggregateVersion, eventType])
+  @@index([institutionId, aggregateId, aggregateVersion])
+  @@index([state, receivedAt])
+  @@map("ingest_events")
+}
+
+model AggregateCursor {
+  id               String      @id @default(uuid()) @db.Uuid
+  institutionId    String      @map("institution_id") @db.Uuid
+  aggregateType    String      @map("aggregate_type")
+  aggregateId      String      @map("aggregate_id") @db.Uuid
+  aggregateVersion Int         @map("aggregate_version")
+  expectedState    String      @map("expected_state")
+  payloadChecksum  String      @map("payload_checksum") @db.Char(64)
+  updatedAt        DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  institution      Institution @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@unique([institutionId, aggregateId])
+  @@index([institutionId, aggregateType, expectedState])
+  @@map("aggregate_cursors")
+}
+
+model QuarantineRecord {
+  id                 String          @id @default(uuid()) @db.Uuid
+  institutionId      String          @map("institution_id") @db.Uuid
+  subjectType        String          @map("subject_type")
+  subjectId          String          @map("subject_id") @db.Uuid
+  reasonCode         String          @map("reason_code")
+  safeDetail         String?         @map("safe_detail") @db.Text
+  previousState      String          @map("previous_state")
+  state              QuarantineState @default(ACTIVE)
+  createdByOpsUserId String          @map("created_by_ops_user_id") @db.Uuid
+  createdAt          DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  resolvedAt         DateTime?       @map("resolved_at") @db.Timestamptz(3)
+  institution        Institution     @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  createdBy          OpsUser         @relation(fields: [createdByOpsUserId], references: [id], onDelete: Restrict)
+
+  @@index([institutionId, subjectType, subjectId, state])
+  @@map("quarantine_records")
+}
+
+model ReconciliationRun {
+  id                 String                  @id @default(uuid()) @db.Uuid
+  institutionId      String                  @map("institution_id") @db.Uuid
+  installationId     String                  @map("installation_id") @db.Uuid
+  state              ReconciliationState     @default(PENDING)
+  manifestChecksum   String                  @map("manifest_checksum") @db.Char(64)
+  manifest           Json
+  countChecked       Int                     @default(0) @map("count_checked")
+  countMismatch      Int                     @default(0) @map("count_mismatch")
+  safeMismatchReport Json?                   @map("safe_mismatch_report")
+  startedAt          DateTime?               @map("started_at") @db.Timestamptz(3)
+  finishedAt         DateTime?               @map("finished_at") @db.Timestamptz(3)
+  createdAt          DateTime                @default(now()) @map("created_at") @db.Timestamptz(3)
+  institution        Institution             @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  installation       InstitutionInstallation @relation(fields: [institutionId, installationId], references: [institutionId, id], onDelete: Restrict)
+
+  @@index([institutionId, state, createdAt])
+  @@map("reconciliation_runs")
+}
+
+model PublicSearchDocument {
+  publicationId     String      @id @map("publication_id") @db.Uuid
+  institutionId     String      @map("institution_id") @db.Uuid
+  normalizedText    String      @map("normalized_text") @db.Text
+  filterDocument    Json        @map("filter_document")
+  coverMediaId      String      @map("cover_media_id") @db.Uuid
+  projectionVersion Int         @map("projection_version")
+  updatedAt         DateTime    @updatedAt @map("updated_at") @db.Timestamptz(3)
+  publication       Publication @relation(fields: [institutionId, publicationId], references: [institutionId, id], onDelete: Cascade)
+
+  @@unique([institutionId, publicationId])
+  @@index([institutionId, updatedAt])
+  @@map("public_search_documents")
+}
+
+model CentralJob {
+  id            String          @id @default(uuid()) @db.Uuid
+  institutionId String?         @map("institution_id") @db.Uuid
+  jobType       String          @map("job_type")
+  dedupeKey     String          @unique @map("dedupe_key")
+  payload       Json
+  state         CentralJobState @default(PENDING)
+  availableAt   DateTime        @default(now()) @map("available_at") @db.Timestamptz(3)
+  leaseUntil    DateTime?       @map("lease_until") @db.Timestamptz(3)
+  attemptCount  Int             @default(0) @map("attempt_count")
+  lastErrorCode String?         @map("last_error_code")
+  createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
+  institution   Institution?    @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+
+  @@index([state, availableAt])
+  @@map("central_jobs")
+}
+
+model TaxonomyVersion {
+  version   Int            @id
+  checksum  String         @db.Char(64)
+  signature String
+  validFrom DateTime       @map("valid_from") @db.Timestamptz(3)
+  active    Boolean        @default(false)
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(3)
+  items     TaxonomyItem[]
+
+  @@map("taxonomy_versions")
+}
+
+model TaxonomyItem {
+  id             String          @id @default(uuid()) @db.Uuid
+  version        Int
+  code           String
+  parentCode     String?         @map("parent_code")
+  labelId        String          @map("label_id")
+  requiredSchema Json            @map("required_schema")
+  active         Boolean         @default(true)
+  taxonomy       TaxonomyVersion @relation(fields: [version], references: [version], onDelete: Restrict)
+
+  @@unique([version, code])
+  @@index([version, parentCode, active])
+  @@map("taxonomy_items")
+}
+
+model OpsUser {
+  id                 String             @id @default(uuid()) @db.Uuid
+  emailNormalized    String             @unique @map("email_normalized")
+  displayName        String             @map("display_name")
+  passwordHash       String             @map("password_hash")
+  state              OpsUserState       @default(INVITED)
+  failedAttemptCount Int                @default(0) @map("failed_attempt_count")
+  lockedUntil        DateTime?          @map("locked_until") @db.Timestamptz(3)
+  createdAt          DateTime           @default(now()) @map("created_at") @db.Timestamptz(3)
+  updatedAt          DateTime           @updatedAt @map("updated_at") @db.Timestamptz(3)
+  mfaFactors         OpsMfaFactor[]
+  sessions           OpsSession[]
+  authChallenges     OpsAuthChallenge[]
+  recoveryCodes      OpsRecoveryCode[]
+  auditLogs          OpsAuditLog[]
+  quarantines        QuarantineRecord[]
+
+  @@map("ops_users")
+}
+
+model OpsMfaFactor {
+  id              String    @id @default(uuid()) @db.Uuid
+  opsUserId       String    @map("ops_user_id") @db.Uuid
+  encryptedSecret String    @map("encrypted_secret") @db.Text
+  verifiedAt      DateTime? @map("verified_at") @db.Timestamptz(3)
+  revokedAt       DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt       DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user            OpsUser   @relation(fields: [opsUserId], references: [id], onDelete: Cascade)
+
+  @@index([opsUserId, revokedAt])
+  @@map("ops_mfa_factors")
+}
+
+model OpsSession {
+  id            String    @id @default(uuid()) @db.Uuid
+  opsUserId     String    @map("ops_user_id") @db.Uuid
+  tokenHash     String    @unique @map("token_hash") @db.Char(64)
+  csrfTokenHash String    @map("csrf_token_hash") @db.Char(64)
+  expiresAt     DateTime  @map("expires_at") @db.Timestamptz(3)
+  revokedAt     DateTime? @map("revoked_at") @db.Timestamptz(3)
+  createdAt     DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user          OpsUser   @relation(fields: [opsUserId], references: [id], onDelete: Cascade)
+
+  @@index([opsUserId, expiresAt])
+  @@map("ops_sessions")
+}
+
+model OpsAuthChallenge {
+  id         String    @id @default(uuid()) @db.Uuid
+  opsUserId  String    @map("ops_user_id") @db.Uuid
+  tokenHash  String    @unique @map("token_hash") @db.Char(64)
+  expiresAt  DateTime  @map("expires_at") @db.Timestamptz(3)
+  consumedAt DateTime? @map("consumed_at") @db.Timestamptz(3)
+  createdAt  DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user       OpsUser   @relation(fields: [opsUserId], references: [id], onDelete: Cascade)
+
+  @@index([opsUserId, expiresAt])
+  @@map("ops_auth_challenges")
+}
+
+model OpsRecoveryCode {
+  id        String    @id @default(uuid()) @db.Uuid
+  opsUserId String    @map("ops_user_id") @db.Uuid
+  codeHash  String    @map("code_hash")
+  usedAt    DateTime? @map("used_at") @db.Timestamptz(3)
+  createdAt DateTime  @default(now()) @map("created_at") @db.Timestamptz(3)
+  user      OpsUser   @relation(fields: [opsUserId], references: [id], onDelete: Cascade)
+
+  @@index([opsUserId, usedAt])
+  @@map("ops_recovery_codes")
+}
+
+model OpsAuditLog {
+  id           String   @id @default(uuid()) @db.Uuid
+  opsUserId    String?  @map("ops_user_id") @db.Uuid
+  action       String
+  subjectType  String   @map("subject_type")
+  subjectId    String?  @map("subject_id") @db.Uuid
+  requestId    String   @map("request_id") @db.Uuid
+  safeMetadata Json?    @map("safe_metadata")
+  occurredAt   DateTime @default(now()) @map("occurred_at") @db.Timestamptz(3)
+  user         OpsUser? @relation(fields: [opsUserId], references: [id], onDelete: SetNull)
+
+  @@index([occurredAt(sort: Desc)])
+  @@index([opsUserId, occurredAt(sort: Desc)])
+  @@map("ops_audit_logs")
+}

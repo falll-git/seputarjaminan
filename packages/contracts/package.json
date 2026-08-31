@@ -1,0 +1,35 @@
+{
+  "name": "@seputarjaminan/contracts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "exports": {
+    ".": {
+      "types": "./src/index.d.ts",
+      "default": "./src/index.mjs"
+    }
+  },
+  "files": [
+    "generated",
+    "openapi",
+    "schemas",
+    "src"
+  ],
+  "scripts": {
+    "generate": "openapi-typescript openapi/openapi.v1.yaml -o generated/openapi.d.ts",
+    "verify": "node scripts/verify-contracts.mjs",
+    "test": "npm run verify && node --test tests/*.test.mjs"
+  },
+  "dependencies": {
+    "ajv": "8.20.0",
+    "ajv-formats": "3.0.1",
+    "fast-uri": "3.1.5"
+  },
+  "devDependencies": {
+    "@apidevtools/swagger-parser": "12.1.0",
+    "openapi-typescript": "7.13.0"
+  }
+}
