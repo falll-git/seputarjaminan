@@ -14,6 +14,15 @@ const localDatabase = "postgresql://test:test@127.0.0.1:55439/seputarjaminan_tes
 const repositoryRoot = resolve("seputarjaminan-test-repository");
 const storageRoot = join(tmpdir(), "seputarjaminan-test-storage");
 
+test("normalisasi URL menghapus slash akhir secara linear tanpa mengubah origin atau path", () => {
+  const origin = "https://api.example.test";
+  for (const suffix of ["", "/", "/".repeat(100_000)]) {
+    assert.equal(loadWebsiteConfig({ NODE_ENV: "production", SJ_PUBLIC_API_BASE_URL: origin + suffix }).publicApiBaseUrl, origin);
+  }
+  assert.throws(() => loadWebsiteConfig({ NODE_ENV: "production", SJ_PUBLIC_API_BASE_URL: origin + "/".repeat(100_000) + "blocked" }));
+  assert.equal(loadWebsiteConfig({ NODE_ENV: "test", SJ_PUBLIC_API_BASE_URL: origin + "/v1///" }).publicApiBaseUrl, origin + "/v1");
+});
+
 test("development API boleh memakai satu database disposable dan flag publik default mati", () => {
   const config = loadApiServerConfig({
     NODE_ENV: "development",

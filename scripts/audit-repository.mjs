@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { open, readFile } from "node:fs/promises";
+import { constants } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
@@ -27,11 +28,24 @@ for (const relativePath of tracked) {
   if (forbiddenFile.test(normalized)) problems.push(`${normalized}: file runtime/sensitif tidak boleh dilacak Git.`);
 
   const absolutePath = path.join(root, relativePath);
-  const metadata = await stat(absolutePath);
-  if (metadata.size > 10 * 1024 * 1024) problems.push(`${normalized}: file melebihi 10 MiB.`);
-  if (!textExtensions.has(path.extname(normalized).toLowerCase()) && !textBasenames.has(path.basename(normalized))) continue;
-
-  const content = await readFile(absolutePath);
+  const handle = await open(absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  let content;
+  try {
+    const metadata = await handle.stat();
+    if (!metadata.isFile()) {
+      problems.push(`${normalized}: bukan file biasa.`);
+      continue;
+    }
+    if (metadata.size > 10 * 1024 * 1024) {
+      problems.push(`${normalized}: file melebihi 10 MiB.`);
+      continue;
+    }
+    if (!textExtensions.has(path.extname(normalized).toLowerCase()) && !textBasenames.has(path.basename(normalized))) continue;
+    content = await handle.readFile();
+    if (content.length > 10 * 1024 * 1024) problems.push(`${normalized}: file melebihi 10 MiB.`);
+  } finally {
+    await handle.close();
+  }
   if (content.includes(0)) problems.push(`${normalized}: mengandung byte NUL.`);
   const source = content.toString("utf8");
   if (/^(?:<<<<<<<|=======|>>>>>>>)/mu.test(source)) problems.push(`${normalized}: memiliki conflict marker.`);

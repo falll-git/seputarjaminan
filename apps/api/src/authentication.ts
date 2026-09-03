@@ -27,6 +27,21 @@ function equalDigest(actual: string, expected: string) {
   return timingSafeEqual(Buffer.from(actual, "hex"), Buffer.from(expected, "hex"));
 }
 
+function parseRequestMetadata(nonce: string, timestamp: string, originalUrl: string) {
+  if (nonce.length < 16 || nonce.length > 200) {
+    throw new ApiError(401, "SIGNATURE_INVALID", "Koneksi Ruwang tidak dapat diverifikasi.");
+  }
+  const requestTime = new Date(timestamp);
+  if (!timestamp.endsWith("Z") || Number.isNaN(requestTime.getTime())) {
+    throw new ApiError(401, "SIGNATURE_INVALID", "Koneksi Ruwang tidak dapat diverifikasi.");
+  }
+  const parsedUrl = new URL(originalUrl, "http://local.invalid");
+  if (parsedUrl.search) {
+    throw new ApiError(400, "SIGNED_QUERY_FORBIDDEN", "Endpoint integrasi ini tidak menerima query.");
+  }
+  return { requestTime, parsedUrl };
+}
+
 export function createIntegrationAuthentication({
   databases,
   toleranceSeconds,
@@ -50,20 +65,10 @@ export function createIntegrationAuthentication({
       if (!/^[0-9a-f-]{36}$/i.test(institutionId) || !/^[0-9a-f-]{36}$/i.test(keyId)) {
         throw new ApiError(401, "SIGNATURE_INVALID", "Koneksi Ruwang tidak dapat diverifikasi.");
       }
-      if (nonce.length < 16 || nonce.length > 200) {
-        throw new ApiError(401, "SIGNATURE_INVALID", "Koneksi Ruwang tidak dapat diverifikasi.");
-      }
-      const requestTime = new Date(timestamp);
-      if (!timestamp.endsWith("Z") || Number.isNaN(requestTime.getTime())) {
-        throw new ApiError(401, "SIGNATURE_INVALID", "Koneksi Ruwang tidak dapat diverifikasi.");
-      }
+      const { requestTime, parsedUrl } = parseRequestMetadata(nonce, timestamp, request.originalUrl);
       const delta = Math.abs(now().getTime() - requestTime.getTime());
       if (delta > toleranceSeconds * 1000) {
         throw new ApiError(401, "SIGNATURE_EXPIRED", "Waktu koneksi Ruwang perlu diperiksa.");
-      }
-      const parsedUrl = new URL(request.originalUrl, "http://local.invalid");
-      if (parsedUrl.search) {
-        throw new ApiError(400, "SIGNED_QUERY_FORBIDDEN", "Endpoint integrasi ini tidak menerima query.");
       }
       const rawBody = request.rawBody || Buffer.alloc(0);
       const actualDigest = createContentSha256(rawBody);

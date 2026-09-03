@@ -55,6 +55,12 @@ jobs:
           languages: javascript-typescript
           queries: security-extended
       - uses: github/codeql-action/analyze@cdf488f595d80d6e07e03d4674febd5ab45fa938 # v4
+        with:
+          output: ${{ runner.temp }}/codeql-results
+      - name: Verify CodeQL gate
+        run: node --test .github/scripts/check-codeql-results.test.mjs
+      - name: Reject unresolved CodeQL findings
+        run: node .github/scripts/check-codeql-results.mjs "${{ runner.temp }}/codeql-results"
 
   semgrep:
     name: Semgrep OWASP

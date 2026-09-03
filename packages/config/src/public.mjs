@@ -7,6 +7,12 @@ function isEnabled(value) {
   return String(value || "").trim().toLowerCase() === "true";
 }
 
+function trimTrailingSlashes(value) {
+  let end = value.length;
+  while (end > 0 && value.charCodeAt(end - 1) === 47) end -= 1;
+  return value.slice(0, end);
+}
+
 export function loadWebsiteConfig(environment = process.env) {
   const nodeEnv = String(environment.NODE_ENV || "development").trim();
   const configured = String(
@@ -37,7 +43,7 @@ export function loadWebsiteConfig(environment = process.env) {
         "SJ_PUBLIC_API_BASE_URL website tidak boleh memuat credential, query, atau fragment.",
       );
     }
-    if ((apiUrl.pathname.replace(/\/+$/, "") || "/") !== "/") {
+    if ((trimTrailingSlashes(apiUrl.pathname) || "/") !== "/") {
       issues.push(
         "SJ_PUBLIC_API_BASE_URL website wajib berupa origin tanpa path tambahan.",
       );
@@ -53,6 +59,6 @@ export function loadWebsiteConfig(environment = process.env) {
   return Object.freeze({
     service: "website",
     nodeEnv,
-    publicApiBaseUrl: configured.replace(/\/+$/, ""),
+    publicApiBaseUrl: trimTrailingSlashes(configured),
   });
 }

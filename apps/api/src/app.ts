@@ -1,5 +1,6 @@
 import express, { type RequestHandler } from "express";
 import helmet from "helmet";
+import { ipKeyGenerator } from "express-rate-limit";
 import pino from "pino";
 import pinoHttp from "pino-http";
 import { assertValidIntegrationEvent } from "@seputarjaminan/contracts";
@@ -49,7 +50,12 @@ export function createApp({
   const app = express();
   app.disable("x-powered-by");
   app.set("trust proxy", 1);
-  app.use(helmet({ contentSecurityPolicy: false }));
+  app.use(helmet({
+    contentSecurityPolicy: {
+      useDefaults: false,
+      directives: { defaultSrc: ["'none'"], frameAncestors: ["'none'"], baseUri: ["'none'"], formAction: ["'none'"] },
+    },
+  }));
   app.use(requestContext);
   app.use(pinoHttp({
     logger,
@@ -60,6 +66,12 @@ export function createApp({
       "req.headers.cookie",
       "res.headers.set-cookie",
     ],
+  }));
+
+  app.use("/v1", rateLimitMiddleware({
+    limiter: ingestLimiter,
+    limit: config.rateLimit.publicPerMinute || 600,
+    key: (request) => "preauth:" + ipKeyGenerator(request.ip || "unknown"),
   }));
 
   const jsonParser = express.json({
@@ -85,7 +97,7 @@ export function createApp({
   const visitorLimit = rateLimitMiddleware({
     limiter: publicLimiter,
     limit: config.rateLimit.publicPerMinute || 600,
-    key: (request) => "public:" + request.ip,
+    key: (request) => "public:" + ipKeyGenerator(request.ip || "unknown"),
   });
 
   const ingestService = new IngestService(databases);
@@ -103,7 +115,7 @@ export function createApp({
   const opsAuthLimit = rateLimitMiddleware({
     limiter: publicLimiter,
     limit: config.rateLimit.opsAuthPerMinute || 10,
-    key: (request) => "ops-auth:" + request.ip,
+    key: (request) => "ops-auth:" + ipKeyGenerator(request.ip || "unknown"),
   });
   const requireOpsConfigured: RequestHandler = (_request, _response, next) => {
     if (!opsAuthService) return next(new ApiError(503, "OPS_NOT_CONFIGURED", "Layanan operasi privat belum dikonfigurasi."));
