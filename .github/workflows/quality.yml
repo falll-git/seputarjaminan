@@ -113,7 +113,7 @@ jobs:
       - name: Validate contracts and generated types
         run: |
           npm run contracts:generate
-          git diff --exit-code -- packages/contracts/generated/openapi.d.ts
+          git -C "$GITHUB_WORKSPACE" -c safe.directory="$GITHUB_WORKSPACE" diff --exit-code -- packages/contracts/generated/openapi.d.ts
           npm run contracts:test
 
       - name: Lint
