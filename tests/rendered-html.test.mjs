@@ -304,7 +304,12 @@ before(async () => {
     [fileURLToPath(new URL("../node_modules/next/dist/bin/next", import.meta.url)), "start", "--hostname", "127.0.0.1", "--port", String(websitePort)],
     {
       cwd: fileURLToPath(projectRoot),
-      env: { ...process.env, NODE_ENV: "production", SJ_PUBLIC_API_BASE_URL: fixtureBaseUrl },
+      env: {
+        ...process.env,
+        NODE_ENV: "production",
+        SJ_ALLOW_LOOPBACK_API: "true",
+        SJ_PUBLIC_API_BASE_URL: fixtureBaseUrl,
+      },
       stdio: ["ignore", "pipe", "pipe"],
     },
   );
@@ -319,6 +324,7 @@ before(async () => {
 after(async () => {
   if (process.env.SJ_VISUAL_FIXTURE_HOLD === "true") {
     visualHoldReady = true;
+    process.stdout.write(`VISUAL_FIXTURE_READY=${websiteBaseUrl}\n`);
     await new Promise((resolve) => {
       process.once("SIGINT", resolve);
       process.once("SIGTERM", resolve);
@@ -1222,7 +1228,7 @@ test("menjaga metadata publik dan memastikan runtime produksi bebas scaffold dan
   assert.match(packageJson, /"@radix-ui\/react-dialog"/);
   assert.match(packageJson, /"embla-carousel-react"/);
   assert.match(packageJson, /"photoswipe": "5\.4\.4"/);
-  assert.match(packageJson, /"next": "16\.3\.2"/);
+  assert.match(packageJson, /"next": "16\.3\.4"/);
   assert.match(packageJson, /"postinstall": "node scripts\/generate-prisma-client\.mjs"/);
   assert.doesNotMatch(packageJson, /vinext|wrangler|drizzle-kit|cloudflare/i);
   assert.match(nextConfig, /localPatterns/);

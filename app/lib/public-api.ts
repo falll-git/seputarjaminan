@@ -4,6 +4,7 @@ import type {
   PublicInstitution,
   PublicTaxonomy,
 } from "@seputarjaminan/contracts";
+import { loadWebsiteConfig } from "@seputarjaminan/config/public";
 import "server-only";
 import { isPublicMediaId, publicMediaIdFromUrl, toSameOriginPublicMediaUrl } from "./public-media";
 
@@ -142,17 +143,11 @@ function assertInstitution(value: unknown): asserts value is PublicInstitution {
 }
 
 function apiBaseUrl() {
-  const configured = process.env.SJ_PUBLIC_API_BASE_URL?.trim() || "http://127.0.0.1:4100";
-  let parsed: URL;
   try {
-    parsed = new URL(configured);
+    return loadWebsiteConfig(process.env).publicApiBaseUrl;
   } catch {
     throw new PublicApiError(503, "PUBLIC_API_CONFIG_INVALID", "Layanan katalog belum dikonfigurasi dengan benar.");
   }
-  if (!/^https?:$/u.test(parsed.protocol)) {
-    throw new PublicApiError(503, "PUBLIC_API_CONFIG_INVALID", "Layanan katalog belum dikonfigurasi dengan benar.");
-  }
-  return parsed.toString().replace(/\/$/u, "");
 }
 
 export async function requestPublicMedia(mediaId: string) {

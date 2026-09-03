@@ -1,0 +1,10 @@
+title = "Seputar Jaminan secret scanning"
+
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Generated dependencies and test artifacts"
+paths = [
+  '''(^|/)(\.git|node_modules|\.next|dist|generated|test-results|playwright-report|blob-report|coverage|quality-reports|outputs|work|previews|\.ci-storage)(/|$)''',
+]

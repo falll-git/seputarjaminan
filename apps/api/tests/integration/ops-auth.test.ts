@@ -17,7 +17,7 @@ const keyId = "c2000000-0000-4000-8000-000000000004";
 const mediaId = "c3000000-0000-4000-8000-000000000005";
 const email = "ops.integration@example.invalid";
 const password = "test-only-ops-password-strong";
-const totpSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+const totpSecret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"; // gitleaks:allow -- RFC 6238 test vector
 const encryptionKey = Buffer.alloc(32, 23).toString("base64");
 const sessionSecret = "integration-only-session-secret-at-least-32-chars";
 

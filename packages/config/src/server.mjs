@@ -55,11 +55,115 @@ function requireValue(value, label, issues) {
   if (!value) issues.push(label + " wajib diisi.");
 }
 
+const privilegedDatabaseUsers = new Set([
+  "postgres",
+  "rdsadmin",
+  "cloudsqlsuperuser",
+  "azure_superuser",
+]);
+
+function parseDatabaseCredential(label, value, issues) {
+  requireValue(value, label, issues);
+  if (!value) return null;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    issues.push(label + " wajib berupa URL PostgreSQL valid.");
+    return null;
+  }
+  if (
+    !["postgres:", "postgresql:"].includes(url.protocol)
+    || !url.username
+    || !url.password
+    || !url.hostname
+    || url.pathname.length <= 1
+  ) {
+    issues.push(label + " wajib memuat protocol, user, password, host, dan database.");
+    return null;
+  }
+  const username = decodeURIComponent(url.username);
+  if (privilegedDatabaseUsers.has(username.toLowerCase())) {
+    issues.push(label + " tidak boleh memakai user database superuser.");
+  }
+  return {
+    label,
+    value,
+    username,
+    target: [
+      url.hostname.toLowerCase(),
+      url.port || "5432",
+      url.pathname,
+      url.searchParams.get("schema") || "public",
+    ].join("|"),
+  };
+}
+
 function requireDistinctDatabaseUrls(entries, issues) {
-  for (const [label, value] of entries) requireValue(value, label, issues);
-  const normalized = entries.map(([, value]) => value).filter(Boolean);
-  if (normalized.length !== new Set(normalized).size) {
+  const parsed = entries
+    .map(([label, value]) => parseDatabaseCredential(label, value, issues))
+    .filter(Boolean);
+  if (parsed.length !== entries.length) return;
+  if (new Set(parsed.map((entry) => entry.value)).size !== parsed.length) {
     issues.push("Credential database production untuk setiap scope proses harus berbeda.");
+  }
+  if (new Set(parsed.map((entry) => entry.username)).size !== parsed.length) {
+    issues.push("User database production untuk setiap scope proses harus berbeda.");
+  }
+  if (new Set(parsed.map((entry) => entry.target)).size !== 1) {
+    issues.push("Credential API pusat wajib menunjuk database Seputar Jaminan yang sama.");
+  }
+}
+
+function validateRedisUrl(value, issues) {
+  if (!value) return;
+  let url;
+  try {
+    url = new URL(value);
+  } catch {
+    issues.push("SJ_REDIS_URL wajib berupa URL Redis valid.");
+    return;
+  }
+  if (!['redis:', 'rediss:'].includes(url.protocol) || !url.hostname) {
+    issues.push("SJ_REDIS_URL wajib memakai protocol redis atau rediss dan memuat host.");
+  }
+}
+
+function validatePublicUrls(apiValue, mediaValue, issues) {
+  let apiUrl;
+  let mediaUrl;
+  try {
+    apiUrl = new URL(apiValue);
+    mediaUrl = new URL(mediaValue);
+  } catch {
+    issues.push("URL publik API dan media wajib valid.");
+    return;
+  }
+  for (const [label, url] of [
+    ["SJ_PUBLIC_API_BASE_URL", apiUrl],
+    ["SJ_PUBLIC_MEDIA_BASE_URL", mediaUrl],
+  ]) {
+    if (url.protocol !== "https:" || url.username || url.password || url.search || url.hash) {
+      issues.push(label + " wajib HTTPS tanpa credential, query, atau fragment.");
+    }
+  }
+  if ((apiUrl.pathname.replace(/\/+$/, "") || "/") !== "/") {
+    issues.push("SJ_PUBLIC_API_BASE_URL wajib berupa origin tanpa path tambahan.");
+  }
+  if (mediaUrl.origin !== apiUrl.origin || mediaUrl.pathname.replace(/\/+$/, "") !== "/v1/public/media") {
+    issues.push("SJ_PUBLIC_MEDIA_BASE_URL wajib memakai origin API yang sama dan path /v1/public/media.");
+  }
+}
+
+function validateOpsEncryptionKey(value, issues) {
+  if (!value) return;
+  if (!/^[A-Za-z0-9+/]+={0,2}$/.test(value) || value.length % 4 !== 0) {
+    issues.push("SJ_OPS_ENCRYPTION_KEY_BASE64 wajib base64 kanonis 32 byte.");
+    return;
+  }
+  const decoded = Buffer.from(value, "base64");
+  if (decoded.length !== 32 || decoded.toString("base64") !== value) {
+    issues.push("SJ_OPS_ENCRYPTION_KEY_BASE64 wajib base64 kanonis 32 byte.");
   }
 }
 
@@ -165,6 +269,9 @@ export function loadApiServerConfig(environment = process.env, options = {}) {
     requireValue(config.rateLimit.opsAuthPerMinute, "SJ_RATE_LIMIT_OPS_AUTH_PER_MINUTE", issues);
     requireValue(config.security.opsEncryptionKeyBase64, "SJ_OPS_ENCRYPTION_KEY_BASE64", issues);
     requireValue(config.security.opsSessionSecret, "SJ_OPS_SESSION_SECRET", issues);
+    validateRedisUrl(config.redisUrl, issues);
+    validatePublicUrls(config.publicApiBaseUrl, config.publicMediaBaseUrl, issues);
+    validateOpsEncryptionKey(config.security.opsEncryptionKeyBase64, issues);
   }
   return finishConfig(config, options, issues);
 }
@@ -183,7 +290,7 @@ export function loadWorkerServerConfig(environment = process.env, options = {}) 
   };
   const issues = [];
   if (config.nodeEnv === "production") {
-    requireValue(config.workerDatabaseUrl, "SJ_WORKER_DATABASE_URL", issues);
+    parseDatabaseCredential("SJ_WORKER_DATABASE_URL", config.workerDatabaseUrl, issues);
     requireValue(config.storage.stopFreeBytes, "SJ_STORAGE_STOP_FREE_BYTES", issues);
     if (config.malware.mode !== "CLAMAV") {
       issues.push("Production wajib memakai malware scanner CLAMAV yang fail-closed.");

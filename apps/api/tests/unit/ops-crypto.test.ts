@@ -5,7 +5,7 @@ import { decryptSecret, encryptSecret, generateTotpSecret, totpCode, verifyTotp 
 import { verify } from "@node-rs/argon2";
 
 test("TOTP mengikuti vektor RFC dan menerima drift paling banyak satu langkah", () => {
-  const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ";
+  const secret = "GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ"; // gitleaks:allow -- RFC 6238 test vector
   assert.equal(totpCode(secret, 59_000), "287082");
   assert.equal(verifyTotp(secret, "287082", 59_000), true);
   assert.equal(verifyTotp(secret, "287082", 59_000 + 60_000), false);
@@ -23,6 +23,10 @@ test("secret MFA dienkripsi AES-256-GCM dan manipulasi ciphertext ditolak", () =
   tamperedCiphertext[0] = tamperedCiphertext[0]! ^ 0xff;
   parts[3] = tamperedCiphertext.toString("base64url");
   assert.throws(() => decryptSecret(parts.join("."), key));
+
+  const truncatedTag = encrypted.split(".");
+  truncatedTag[2] = Buffer.from(truncatedTag[2]!, "base64url").subarray(0, 12).toString("base64url");
+  assert.throws(() => decryptSecret(truncatedTag.join("."), key), /Format secret terenkripsi tidak valid/u);
 });
 
 test("password dan recovery secret memakai Argon2id terverifikasi", async () => {

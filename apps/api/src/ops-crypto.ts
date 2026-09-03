@@ -64,7 +64,7 @@ function encryptionKey(base64Key: string): Buffer {
 
 export function encryptSecret(plaintext: string, base64Key: string): string {
   const iv = randomBytes(12);
-  const cipher = createCipheriv("aes-256-gcm", encryptionKey(base64Key), iv);
+  const cipher = createCipheriv("aes-256-gcm", encryptionKey(base64Key), iv, { authTagLength: 16 });
   const ciphertext = Buffer.concat([cipher.update(plaintext, "utf8"), cipher.final()]);
   const tag = cipher.getAuthTag();
   return ["v1", iv.toString("base64url"), tag.toString("base64url"), ciphertext.toString("base64url")].join(".");
@@ -75,8 +75,11 @@ export function decryptSecret(encrypted: string, base64Key: string): string {
   if (version !== "v1" || !ivValue || !tagValue || !ciphertextValue) {
     throw new Error("Format secret terenkripsi tidak valid.");
   }
-  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(base64Key), Buffer.from(ivValue, "base64url"));
-  decipher.setAuthTag(Buffer.from(tagValue, "base64url"));
+  const iv = Buffer.from(ivValue, "base64url");
+  const tag = Buffer.from(tagValue, "base64url");
+  if (iv.length !== 12 || tag.length !== 16) throw new Error("Format secret terenkripsi tidak valid.");
+  const decipher = createDecipheriv("aes-256-gcm", encryptionKey(base64Key), iv, { authTagLength: 16 });
+  decipher.setAuthTag(tag);
   return Buffer.concat([
     decipher.update(Buffer.from(ciphertextValue, "base64url")),
     decipher.final(),

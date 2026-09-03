@@ -15,9 +15,19 @@
     "build": "next build",
     "start": "next start",
     "test": "npm run contracts:test && npm run build && node --test tests/rendered-html.test.mjs",
+    "test:unit": "npm run contracts:test && npm test --workspace @seputarjaminan/api && npm test --workspace @seputarjaminan/worker && npm test --workspace @seputarjaminan/config && npm test --workspace @seputarjaminan/storage",
+    "test:integration": "npm run test:integration --workspace @seputarjaminan/api",
+    "test:rendered": "node --test tests/rendered-html.test.mjs",
+    "test:browser": "node scripts/run-browser-tests.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "typecheck": "tsc --noEmit",
     "db:generate": "node scripts/generate-prisma-client.mjs",
+    "ci:database:provision": "node scripts/ci-provision-postgres.mjs",
+    "ci:database:verify": "node scripts/ci-verify-database.mjs",
+    "ci:redis:verify": "node scripts/ci-verify-redis.mjs",
+    "ci:migrations:check": "node scripts/check-migration-integrity.mjs",
+    "ci:repository:audit": "node scripts/audit-repository.mjs",
+    "config:production:validate": "npm test --workspace @seputarjaminan/config",
     "contracts:generate": "npm run generate --workspace @seputarjaminan/contracts",
     "contracts:verify": "npm run verify --workspace @seputarjaminan/contracts",
     "contracts:test": "npm test --workspace @seputarjaminan/contracts"
@@ -31,7 +41,7 @@
     "@seputarjaminan/contracts": "1.0.0",
     "embla-carousel-react": "^8.6.0",
     "motion": "^13.1.1",
-    "next": "16.3.2",
+    "next": "16.3.4",
     "photoswipe": "5.4.4",
     "react": "19.2.8",
     "react-aria-components": "^1.20.0",
@@ -39,7 +49,8 @@
   },
   "devDependencies": {
     "@eslint/js": "9.39.4",
-    "@next/eslint-plugin-next": "16.3.2",
+    "@next/eslint-plugin-next": "16.3.4",
+    "@playwright/test": "1.61.1",
     "@types/node": "22.19.19",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
@@ -58,9 +69,11 @@
     "brace-expansion": "5.0.9",
     "deepmerge-ts": "8.0.2",
     "esbuild": "0.28.2",
-    "fast-uri": "3.1.5",
+    "fast-uri": "3.1.7",
     "nanoid": "3.3.18",
-    "postcss": "8.5.26"
+    "postcss": "8.5.26",
+    "mysql2": "3.24.3",
+    "qs": "6.16.0"
   },
   "type": "module"
 }

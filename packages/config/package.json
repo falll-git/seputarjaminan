@@ -4,6 +4,10 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./public": {
+      "types": "./src/public.d.ts",
+      "default": "./src/public.mjs"
+    },
     "./server": {
       "types": "./src/server.d.ts",
       "default": "./src/server.mjs"

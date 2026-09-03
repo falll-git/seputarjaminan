@@ -1,0 +1,155 @@
+name: Quality
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    name: Contracts, application, database, and browser
+    runs-on: ubuntu-24.04
+    timeout-minutes: 35
+    container:
+      image: mcr.microsoft.com/playwright:v1.61.1-noble@sha256:5b8f294aff9041b7191c34a4bab3ac270157a28774d4b0660e9743297b697e48
+    services:
+      postgres:
+        image: postgres:16-alpine@sha256:57c72fd2a128e416c7fcc499958864df5301e940bca0a56f58fddf30ffc07777
+        env:
+          POSTGRES_DB: seputarjaminan_ci
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+        options: >-
+          --health-cmd "pg_isready -U postgres -d seputarjaminan_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+      redis:
+        image: redis:7.4.11-alpine@sha256:ff02b58f971e7d7d156a1267e283fcbbeee91773b6aa36c49dac28ecfe28eadf
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
+    env:
+      CI: "true"
+      DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seputarjaminan_ci?schema=public
+      SJ_TEST_OWNER_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seputarjaminan_ci?schema=public
+      SJ_REDIS_URL: redis://redis:6379/0
+      SJ_CI_ALLOW_DISPOSABLE_DATABASE: "true"
+      SJ_STORAGE_ROOT: ${{ github.workspace }}/.ci-storage
+      SJ_STORAGE_STOP_FREE_BYTES: "1"
+    steps:
+      - name: Checkout
+        uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Generate ephemeral database credentials
+        shell: bash
+        run: |
+          set -euo pipefail
+          append_secret() {
+            printf '::add-mask::%s\n' "$2"
+            printf '%s=%s\n' "$1" "$2" >> "$GITHUB_ENV"
+          }
+          add_runtime() {
+            local scope="$1"
+            local login="$2"
+            local password
+            local url
+            password="$(openssl rand -hex 24)"
+            url="postgresql://${login}:${password}@postgres:5432/seputarjaminan_ci?schema=public"
+            append_secret "SJ_CI_${scope}_PASSWORD" "$password"
+            append_secret "SJ_TEST_${scope}_DATABASE_URL" "$url"
+          }
+          add_runtime REGISTRY sj_ci_registry
+          add_runtime INGEST sj_ci_ingest
+          add_runtime PUBLIC sj_ci_public
+          add_runtime OPS sj_ci_ops
+          add_runtime WORKER sj_ci_worker
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Validate production configuration templates
+        run: npm run config:production:validate
+
+      - name: Verify immutable migrations
+        run: npm run ci:migrations:check
+
+      - name: Provision disposable PostgreSQL roles
+        run: npm run ci:database:provision
+
+      - name: Generate Prisma client
+        run: npm run db:generate
+
+      - name: Apply all migrations
+        run: npx prisma migrate deploy
+
+      - name: Verify migration status and runtime roles
+        run: |
+          npx prisma migrate status
+          npm run ci:database:verify
+
+      - name: Verify disposable Redis
+        run: npm run ci:redis:verify
+
+      - name: Validate contracts and generated types
+        run: |
+          npm run contracts:generate
+          git diff --exit-code -- packages/contracts/generated/openapi.d.ts
+          npm run contracts:test
+
+      - name: Lint
+        run: npm run lint
+
+      - name: TypeScript
+        run: |
+          npm run typecheck
+          npm run typecheck --workspace @seputarjaminan/api
+          npm run typecheck --workspace @seputarjaminan/worker
+
+      - name: Unit tests
+        run: npm run test:unit
+
+      - name: Integration tests
+        run: npm run test:integration
+
+      - name: Production builds
+        run: |
+          npm run build
+          npm run build --workspace @seputarjaminan/api
+          npm run build --workspace @seputarjaminan/worker
+
+      - name: Rendered HTML tests
+        run: npm run test:rendered
+
+      - name: Browser tests
+        run: npm run test:browser
+
+      - name: Upload failure artifacts
+        if: ${{ failure() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: quality-failure-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            playwright-report
+            test-results
+          if-no-files-found: warn
+          retention-days: 7
