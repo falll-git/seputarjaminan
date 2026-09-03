@@ -1,5 +1,7 @@
 import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
 import test from "node:test";
 import {
   loadApiServerConfig,
@@ -9,12 +11,14 @@ import {
 import { loadWebsiteConfig } from "../src/public.mjs";
 
 const localDatabase = "postgresql://test:test@127.0.0.1:55439/seputarjaminan_test";
+const repositoryRoot = resolve("seputarjaminan-test-repository");
+const storageRoot = join(tmpdir(), "seputarjaminan-test-storage");
 
 test("development API boleh memakai satu database disposable dan flag publik default mati", () => {
   const config = loadApiServerConfig({
     NODE_ENV: "development",
     DATABASE_URL: localDatabase,
-    SJ_STORAGE_ROOT: "D:\\sj-test-storage",
+    SJ_STORAGE_ROOT: storageRoot,
   });
   assert.equal(config.ingestDatabaseUrl, localDatabase);
   assert.deepEqual(config.flags, {
@@ -29,7 +33,7 @@ test("development worker hanya menerima credential worker dan flag default mati"
   const config = loadWorkerServerConfig({
     NODE_ENV: "development",
     DATABASE_URL: localDatabase,
-    SJ_STORAGE_ROOT: "D:\\sj-test-storage",
+    SJ_STORAGE_ROOT: storageRoot,
   });
   assert.equal(config.workerDatabaseUrl, localDatabase);
   assert.deepEqual(config.flags, { worker: false });
@@ -43,7 +47,7 @@ test("TEST_SAFE ditolak untuk worker di luar automated test", () => {
       loadWorkerServerConfig({
         NODE_ENV: "development",
         DATABASE_URL: localDatabase,
-        SJ_STORAGE_ROOT: "D:\\sj-test-storage",
+        SJ_STORAGE_ROOT: storageRoot,
         SJ_MALWARE_SCAN_MODE: "TEST_SAFE",
       }),
     (error) => error.issues.some((issue) => issue.includes("TEST_SAFE")),
@@ -85,7 +89,7 @@ test("production API menolak credential database yang dipakai bersama", () => {
           SJ_PUBLIC_DATABASE_URL: localDatabase,
           SJ_OPS_DATABASE_URL: localDatabase,
           SJ_REDIS_URL: "redis://127.0.0.1:6379",
-          SJ_STORAGE_ROOT: "D:\\sj-storage",
+          SJ_STORAGE_ROOT: storageRoot,
           SJ_STORAGE_STOP_FREE_BYTES: "1073741824",
           SJ_RATE_LIMIT_INGEST_PER_MINUTE: "60",
           SJ_RATE_LIMIT_PUBLIC_PER_MINUTE: "600",
@@ -93,7 +97,7 @@ test("production API menolak credential database yang dipakai bersama", () => {
           SJ_OPS_ENCRYPTION_KEY_BASE64: "dGVzdC1vbmx5LW5vdC1hLXJlYWwta2V5", // gitleaks:allow -- invalid test-only placeholder
           SJ_OPS_SESSION_SECRET: "test-only-session-secret-at-least-32-chars",
         },
-        { repositoryRoot: "D:\\seputarjaminan-production" },
+        { repositoryRoot },
       ),
     (error) => error.issues.some((issue) => issue.includes("harus berbeda")),
   );
@@ -104,11 +108,11 @@ test("production worker tidak meminta credential API atau Redis", () => {
     {
       NODE_ENV: "production",
       SJ_WORKER_DATABASE_URL: "postgresql://worker:secret@127.0.0.1:5432/seputarjaminan",
-      SJ_STORAGE_ROOT: "D:\\sj-storage",
+      SJ_STORAGE_ROOT: storageRoot,
       SJ_STORAGE_STOP_FREE_BYTES: "1073741824",
       SJ_MALWARE_SCAN_MODE: "CLAMAV",
     },
-    { repositoryRoot: "D:\\seputarjaminan-production" },
+    { repositoryRoot },
   );
   assert.equal(config.service, "worker");
   assert.equal("registryDatabaseUrl" in config, false);
@@ -129,7 +133,7 @@ test("production API menerima empat role least-privilege pada database pusat yan
       SJ_PUBLIC_API_BASE_URL: "https://api.seputarjaminan.example.test",
       SJ_PUBLIC_MEDIA_BASE_URL:
         "https://api.seputarjaminan.example.test/v1/public/media",
-      SJ_STORAGE_ROOT: "D:\\sj-persistent-storage",
+      SJ_STORAGE_ROOT: storageRoot,
       SJ_STORAGE_STOP_FREE_BYTES: "1073741824",
       SJ_RATE_LIMIT_INGEST_PER_MINUTE: "60",
       SJ_RATE_LIMIT_PUBLIC_PER_MINUTE: "600",
@@ -137,7 +141,7 @@ test("production API menerima empat role least-privilege pada database pusat yan
       SJ_OPS_ENCRYPTION_KEY_BASE64: Buffer.alloc(32, 9).toString("base64"),
       SJ_OPS_SESSION_SECRET: "x".repeat(48),
     },
-    { repositoryRoot: "D:\\seputarjaminan-production" },
+    { repositoryRoot },
   );
   assert.equal(config.service, "api");
   assert.equal(safeConfigSummary(config).databaseCredentialsSeparated, true);
@@ -158,7 +162,7 @@ test("production menolak superuser, target database berbeda, Redis salah, dan UR
           SJ_REDIS_URL: "https://redis.internal:6379",
           SJ_PUBLIC_API_BASE_URL: "http://api.example.test/path",
           SJ_PUBLIC_MEDIA_BASE_URL: "https://media.example.test/v1/public/media",
-          SJ_STORAGE_ROOT: "D:\\sj-persistent-storage",
+          SJ_STORAGE_ROOT: storageRoot,
           SJ_STORAGE_STOP_FREE_BYTES: "1073741824",
           SJ_RATE_LIMIT_INGEST_PER_MINUTE: "60",
           SJ_RATE_LIMIT_PUBLIC_PER_MINUTE: "600",
@@ -166,7 +170,7 @@ test("production menolak superuser, target database berbeda, Redis salah, dan UR
           SJ_OPS_ENCRYPTION_KEY_BASE64: "bukan-base64",
           SJ_OPS_SESSION_SECRET: "x".repeat(48),
         },
-        { repositoryRoot: "D:\\seputarjaminan-production" },
+        { repositoryRoot },
       ),
     (error) => {
       const message = error.issues.join("\n");
@@ -195,12 +199,12 @@ test("ringkasan konfigurasi API dan worker tidak mengandung URL database atau se
   const api = loadApiServerConfig({
     NODE_ENV: "test",
     DATABASE_URL: localDatabase,
-    SJ_STORAGE_ROOT: "D:\\sj-test-storage",
+    SJ_STORAGE_ROOT: storageRoot,
   });
   const worker = loadWorkerServerConfig({
     NODE_ENV: "test",
     DATABASE_URL: localDatabase,
-    SJ_STORAGE_ROOT: "D:\\sj-test-storage",
+    SJ_STORAGE_ROOT: storageRoot,
     SJ_MALWARE_SCAN_MODE: "TEST_SAFE",
   });
   const serialized = JSON.stringify([safeConfigSummary(api), safeConfigSummary(worker)]);
