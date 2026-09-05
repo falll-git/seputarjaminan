@@ -38,7 +38,12 @@ export class RedisFixedWindowRateLimiter implements RateLimiter {
   }
 
   async disconnect() {
-    await this.redis.quit();
+    if (this.redis.status === "ready") {
+      await this.redis.quit();
+      return;
+    }
+
+    this.redis.disconnect(false);
   }
 }
 

@@ -6,6 +6,12 @@ import { RedisFixedWindowRateLimiter } from "../../src/rate-limit.js";
 
 const redisUrl = process.env.SJ_TEST_REDIS_URL || process.env.SJ_REDIS_URL;
 
+test("disconnect aman ketika koneksi lazy belum pernah digunakan", async () => {
+  const limiter = new RedisFixedWindowRateLimiter("redis://127.0.0.1:1/15");
+  await limiter.disconnect();
+  await limiter.disconnect();
+});
+
 test("counter Redis dibagi antar instance dan koneksi awal paralel tetap valid", { skip: !redisUrl }, async () => {
   const parsed = new URL(redisUrl!);
   assert.ok(["127.0.0.1", "localhost", "redis"].includes(parsed.hostname), "Tes hanya boleh memakai Redis disposable lokal/CI.");
