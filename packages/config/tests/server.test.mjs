@@ -1,4 +1,5 @@
 import assert from "node:assert/strict";
+import { generateKeyPairSync } from "node:crypto";
 import { readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -9,6 +10,12 @@ import {
   safeConfigSummary,
 } from "../src/server.mjs";
 import { loadWebsiteConfig } from "../src/public.mjs";
+test('public website origin is optional and independent, validated without API fallback',()=>{
+  const base={NODE_ENV:'test',SJ_STORAGE_ROOT:storageRoot};
+  assert.equal(loadApiServerConfig(base).publicWebsiteOrigin,undefined);
+  assert.equal(loadApiServerConfig({...base,SJ_PUBLIC_WEBSITE_ORIGIN:'http://127.0.0.1:4411/'}).publicWebsiteOrigin,'http://127.0.0.1:4411');
+  for(const value of ['http://remote.example','https://user:pass@site.example','https://site.example/path','https://site.example/?q=x','file:///x'])assert.throws(()=>loadApiServerConfig({...base,SJ_PUBLIC_WEBSITE_ORIGIN:value}));
+});
 
 const localDatabase = "postgresql://test:test@127.0.0.1:55439/seputarjaminan_test";
 const repositoryRoot = resolve("seputarjaminan-test-repository");
@@ -34,8 +41,24 @@ test("development API boleh memakai satu database disposable dan flag publik def
     publicSite: false,
     ingest: false,
     mediaUpload: false,
+    controlMonitoring: false,
+    controlRecovery: false,
   });
   assert.equal("workerDatabaseUrl" in config, false);
+});
+
+test('Control recovery needs independent explicit installation bindings and Ed25519 keys',()=>{
+  const pair=generateKeyPairSync('ed25519'),privateKey=pair.privateKey.export({type:'pkcs8',format:'pem'}).toString();
+  const binding={instanceId:'00000000-0000-4000-8000-000000000001',institutionId:'00000000-0000-4000-8000-000000000002',
+    installationId:'00000000-0000-4000-8000-000000000003',keyId:'control-recovery',publicKey:pair.publicKey.export({type:'spki',format:'pem'}).toString()};
+  const env={NODE_ENV:'test',SJ_STORAGE_ROOT:storageRoot,SJ_CONTROL_RECOVERY_ENABLED:'true',SJ_REDIS_URL:'redis://127.0.0.1:1/0',
+    SJ_CONTROL_RECOVERY_BINDINGS:JSON.stringify([binding]),SJ_CONTROL_RECOVERY_AUDIENCE:'sj-disposable',
+    SJ_CONTROL_RECOVERY_RESPONSE_KEY_ID:'sj-recovery',SJ_CONTROL_RECOVERY_RESPONSE_PRIVATE_KEY:privateKey};
+  const config=loadApiServerConfig(env);assert.equal(config.flags.controlRecovery,true);assert.deepEqual(config.controlRecovery.bindings,[binding]);
+  for(const key of ['SJ_REDIS_URL','SJ_CONTROL_RECOVERY_BINDINGS','SJ_CONTROL_RECOVERY_AUDIENCE','SJ_CONTROL_RECOVERY_RESPONSE_KEY_ID','SJ_CONTROL_RECOVERY_RESPONSE_PRIVATE_KEY'])assert.throws(()=>loadApiServerConfig({...env,[key]:undefined}));
+  for(const bindings of [[],[binding,binding],[{...binding,installationId:'current'}],[{...binding,permission:'all'}],[{...binding,publicKey:'invalid'}]])assert.throws(()=>loadApiServerConfig({...env,SJ_CONTROL_RECOVERY_BINDINGS:JSON.stringify(bindings)}));
+  assert.equal(JSON.stringify(safeConfigSummary(config)).includes(privateKey),false);
+  assert.equal(JSON.stringify(safeConfigSummary(config)).includes(binding.publicKey),false);
 });
 
 test("development worker hanya menerima credential worker dan flag default mati", () => {
@@ -47,7 +70,7 @@ test("development worker hanya menerima credential worker dan flag default mati"
   assert.equal(config.workerDatabaseUrl, localDatabase);
   assert.deepEqual(config.flags, { worker: false });
   assert.equal("opsDatabaseUrl" in config, false);
-  assert.equal("redisUrl" in config, false);
+  assert.equal(config.redisUrl, undefined);
 });
 
 test("TEST_SAFE ditolak untuk worker di luar automated test", () => {
@@ -61,6 +84,14 @@ test("TEST_SAFE ditolak untuk worker di luar automated test", () => {
       }),
     (error) => error.issues.some((issue) => issue.includes("TEST_SAFE")),
   );
+});
+
+test("Docker scanner explicit local only, no TEST_SAFE or production bypass", () => {
+  const base = { NODE_ENV: "development", DATABASE_URL: localDatabase, SJ_STORAGE_ROOT: storageRoot, SJ_MALWARE_SCAN_MODE: "CLAMAV", SJ_CLAMAV_DOCKER_CONTAINER: "sj-local-clamav" };
+  assert.equal(loadWorkerServerConfig(base).malware.dockerContainer, "sj-local-clamav");
+  assert.throws(() => loadWorkerServerConfig({ ...base, NODE_ENV: "production" }));
+  assert.throws(() => loadWorkerServerConfig({ ...base, NODE_ENV: "test", SJ_MALWARE_SCAN_MODE: "TEST_SAFE" }));
+  assert.throws(() => loadWorkerServerConfig({ ...base, SJ_CLAMAV_DOCKER_CONTAINER: "x;whoami" }));
 });
 
 test("website production mewajibkan origin API HTTPS dan hanya mengizinkan loopback secara eksplisit", () => {
@@ -112,7 +143,7 @@ test("production API menolak credential database yang dipakai bersama", () => {
   );
 });
 
-test("production worker tidak meminta credential API atau Redis", () => {
+test("production worker meminta Redis heartbeat tanpa membawa credential API", () => {
   const config = loadWorkerServerConfig(
     {
       NODE_ENV: "production",
@@ -120,13 +151,14 @@ test("production worker tidak meminta credential API atau Redis", () => {
       SJ_STORAGE_ROOT: storageRoot,
       SJ_STORAGE_STOP_FREE_BYTES: "1073741824",
       SJ_MALWARE_SCAN_MODE: "CLAMAV",
+      SJ_REDIS_URL: "redis://127.0.0.1:6379/0",
     },
     { repositoryRoot },
   );
   assert.equal(config.service, "worker");
   assert.equal("registryDatabaseUrl" in config, false);
   assert.equal("opsDatabaseUrl" in config, false);
-  assert.equal("redisUrl" in config, false);
+  assert.equal(config.redisUrl, "redis://127.0.0.1:6379/0");
 });
 
 test("production API menerima empat role least-privilege pada database pusat yang sama", () => {
@@ -154,6 +186,30 @@ test("production API menerima empat role least-privilege pada database pusat yan
   );
   assert.equal(config.service, "api");
   assert.equal(safeConfigSummary(config).databaseCredentialsSeparated, true);
+});
+
+test("monitoring pusat wajib lengkap, HTTPS, dan mati secara default", () => {
+  const responseKeys = generateKeyPairSync("ed25519");
+  const controlKeys = generateKeyPairSync("ed25519");
+  const base = {
+    NODE_ENV: "test",
+    DATABASE_URL: localDatabase,
+    SJ_REDIS_URL: "redis://127.0.0.1:6379/0",
+    SJ_STORAGE_ROOT: storageRoot,
+    SJ_CONTROL_MONITORING_ENABLED: "true",
+    SJ_CONTROL_MONITORING_INSTANCE_ID: "50000000-0000-4000-8000-000000000001",
+    SJ_CONTROL_MONITORING_KEY_ID: "control-monitor-key",
+    SJ_CONTROL_MONITORING_PUBLIC_KEY: controlKeys.publicKey.export({ type: "spki", format: "pem" }).toString(),
+    SJ_CONTROL_MONITORING_RESPONSE_KEY_ID: "central-response-key",
+    SJ_CONTROL_MONITORING_RESPONSE_PRIVATE_KEY: responseKeys.privateKey.export({ type: "pkcs8", format: "pem" }).toString(),
+    SJ_CONTROL_MONITORING_AUDIENCE: "ruwang-control-test",
+    SJ_CONTROL_MONITORING_FRONTEND_URL: "http://127.0.0.1:3000",
+  };
+  assert.equal(loadApiServerConfig(base).flags.controlMonitoring, true);
+  assert.throws(() => loadApiServerConfig({ ...base, SJ_CONTROL_MONITORING_FRONTEND_URL: "https://example.test/path" }),
+    (error) => error.issues.some((issue) => issue.includes("berupa origin")));
+  assert.throws(() => loadApiServerConfig({ ...base, NODE_ENV: "production", SJ_CONTROL_MONITORING_FRONTEND_URL: "http://example.test" }),
+    (error) => error.issues.some((issue) => issue.includes("wajib HTTPS")));
 });
 
 test("production menolak superuser, target database berbeda, Redis salah, dan URL publik tidak aman", () => {
@@ -230,10 +286,12 @@ test("template environment memisahkan credential API, worker, dan website", () =
   assert.doesNotMatch(website, /DATABASE_URL|SECRET|ACCESS_KEY/u);
   assert.doesNotMatch(api, /^SJ_WORKER_DATABASE_URL=/m);
   assert.doesNotMatch(worker, /^SJ_(?:REGISTRY|INGEST|PUBLIC|OPS)_DATABASE_URL=/m);
-  assert.doesNotMatch(worker, /^SJ_(?:REDIS_URL|OPS_ENCRYPTION_KEY_BASE64|OPS_SESSION_SECRET)=/m);
+  assert.match(worker, /^SJ_REDIS_URL=$/m);
+  assert.doesNotMatch(worker, /^SJ_(?:OPS_ENCRYPTION_KEY_BASE64|OPS_SESSION_SECRET)=/m);
   assert.match(api, /^SJ_PUBLIC_SITE_ENABLED=false$/m);
   assert.match(api, /^SJ_INGEST_ENABLED=false$/m);
   assert.match(api, /^SJ_MEDIA_UPLOAD_ENABLED=false$/m);
+  assert.match(api, /^SJ_CONTROL_MONITORING_ENABLED=false$/m);
   assert.match(worker, /^SJ_WORKER_ENABLED=false$/m);
   assert.match(api, /^SJ_STORAGE_PROVIDER=FILESYSTEM$/m);
   assert.match(api, /^SJ_S3_ENDPOINT=$/m);

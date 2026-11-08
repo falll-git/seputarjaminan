@@ -11,7 +11,7 @@ export class MediaValidationError extends Error {
   }
 }
 
-export async function transformPublicImage(input: Buffer) {
+export async function transformPublicImage(input: Buffer, expected?: { mime: string; width: number; height: number }, options: { size?: 2560 | 960 | 320; logo?: boolean } = {}) {
   let metadata;
   try {
     metadata = await sharp(input, { failOn: "error", limitInputPixels: 40_000_000 }).metadata();
@@ -24,16 +24,24 @@ export async function transformPublicImage(input: Buffer) {
   if (!metadata.width || !metadata.height || (metadata.pages && metadata.pages > 1)) {
     throw new MediaValidationError("MEDIA_STRUCTURE_REJECTED", "Struktur gambar tidak didukung.");
   }
+  if (expected && `image/${metadata.format}` !== expected.mime) {
+    throw new MediaValidationError("MEDIA_TYPE_MISMATCH", "Format gambar berbeda dari sesi upload.");
+  }
+  if (expected && (metadata.width !== expected.width || metadata.height !== expected.height)) {
+    throw new MediaValidationError("MEDIA_DIMENSION_MISMATCH", "Dimensi gambar berbeda dari sesi upload.");
+  }
   const output = await sharp(input, { failOn: "error", limitInputPixels: 40_000_000 })
     .rotate()
     .resize({
-      width: 2560,
-      height: 2560,
+      width: options.size ?? 2560,
+      height: options.size ?? 2560,
       fit: "inside",
       withoutEnlargement: true,
     })
-    .webp({ quality: 85, effort: 5 })
-    .toBuffer({ resolveWithObject: true });
+    .webp({ quality: 85, effort: 5, lossless: options.logo ?? false })
+    .toBuffer({ resolveWithObject: true }).catch(() => {
+      throw new MediaValidationError("MEDIA_DECODE_FAILED", "File tidak dapat dibaca sebagai gambar lengkap.");
+    });
   return {
     bytes: output.data,
     mime: "image/webp",

@@ -37,6 +37,8 @@ jobs:
       - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: 24
+      - name: Install reviewed audit dependency without application postinstall
+        run: npm ci --ignore-scripts
       - run: npm run ci:migrations:check
       - run: npm run ci:repository:audit
 

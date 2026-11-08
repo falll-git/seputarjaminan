@@ -21,6 +21,23 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/public/media/{mediaId}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Gambar turunan yang masih memenuhi kelayakan publik, bukan original */
+        get: operations["getPublicMedia"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/media/upload-sessions": {
         parameters: {
             query?: never;
@@ -126,6 +143,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/public/showcase": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Sampel acak maksimal delapan aset yang layak publik
+         * @description Tanpa parameter. Seluruh populasi layak publik memiliki peluang dipilih; tidak ada duplikasi, total global, cursor lanjutan atau klaim rekomendasi. Urutan stabil dalam respons, tidak dijamin sama antar request. Cache-Control no-store. Eligibility dan allowlist sama dengan katalog.
+         */
+        get: operations["getPublicShowcase"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/public/assets": {
         parameters: {
             query?: never;
@@ -133,7 +170,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Daftar aset publik yang benar-benar aktif */
+        /**
+         * Daftar aset publik yang benar-benar aktif
+         * @description Parameter tidak dikenal, berulang, kosong, atau tidak valid ditolak 400. Cursor opaque terikat filter dan urutan; jangan digunakan kembali setelah filter berubah. Urutan public_updated_at lalu id searah. Tidak ada total global. Provinsi/kota dinormalisasi NFKC dan whitespace serta dibandingkan tanpa membedakan kapitalisasi.
+         */
         get: operations["listPublicAssets"];
         put?: never;
         post?: never;
@@ -167,7 +207,10 @@ export interface paths {
             path?: never;
             cookie?: never;
         };
-        /** Daftar BPRS penerbit aktif */
+        /**
+         * Daftar BPRS penerbit aktif
+         * @description Hanya BPRS dengan aset eligible. Cursor opaque terikat q/province; urutan public_slug menaik. Parameter tidak dikenal, berulang, kosong, dan cursor tidak sesuai ditolak 400. published_asset_count adalah jumlah aset eligible BPRS, bukan total hasil direktori.
+         */
         get: operations["listPublicInstitutions"];
         put?: never;
         post?: never;
@@ -415,6 +458,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/v1/ops/jobs/{jobId}/retry": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Menjadwalkan ulang dead-letter melalui sesi operasi privat dengan audit
+         * @description Tidak mengubah status media atau melewati revoke dan quarantine. Tidak tersedia untuk pengunjung atau credential BPRS.
+         */
+        post: operations["retryDeadLetterJob"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/v1/ops/health": {
         parameters: {
             query?: never;
@@ -436,6 +499,7 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** @description APPLIED acknowledges the committed ingest transaction, not search projection, media delivery or current public visibility. DUPLICATE never reapplies an event. Retry with the same immutable event envelope and a new signed transport nonce. Changing event metadata under an existing event_id is a conflict. */
         IngestAcknowledgment: {
             /** Format: uuid */
             request_id: string;
@@ -443,6 +507,7 @@ export interface components {
             status: "APPLIED" | "DUPLICATE";
             /** Format: uuid */
             event_id: string;
+            /** @description Current central cursor version at acknowledgment time; may exceed the duplicated event version. */
             active_aggregate_version: number;
             /** Format: date-time */
             acknowledged_at: string;
@@ -458,6 +523,7 @@ export interface components {
             /** Format: date-time */
             checked_at: string;
         };
+        /** @description A completed comparison checks cursor identity and actual database lifecycle, publication eligibility, media readiness metadata and search projection version. Zero mismatches is a point-in-time database comparison, not a storage/network health guarantee. Quarantine or expired confirmation can mismatch a matching cursor. Recommended actions are diagnostic only and never authorize automatic state repair. */
         ReconciliationRun: {
             /** Format: uuid */
             request_id: string;
@@ -505,8 +571,16 @@ export interface components {
             photo_count: number;
             /** Format: date-time */
             public_updated_at: string;
+            summary_attributes?: components["schemas"]["PublicCardAttributes"];
         };
         PublicAssetDetail: {
+            /** @description Applied SJ publication event aggregate version, not a bank draft revision or a guarantee of continued availability. */
+            public_asset_version?: number;
+            /**
+             * Format: uri
+             * @description Canonical asset page from configured website origin; null when not configured. Never inferred from API origin.
+             */
+            public_page_url?: string | null;
             reference_code: string;
             title: string;
             category: string;
@@ -519,13 +593,44 @@ export interface components {
             photo_count: number;
             /** Format: date-time */
             public_updated_at: string;
+            summary_attributes?: components["schemas"]["PublicCardAttributes"];
             description: string;
-            attributes: {
-                [key: string]: string | number;
-            };
+            attributes: components["schemas"]["PublicAttributes"];
             media: components["schemas"]["PublicMedia"][];
             /** Format: uri */
             whatsapp_url: string;
+        };
+        /** @description Subset opsional atribut publik yang sudah tersedia. Tanah luas tanah; bangunan luas tanah/bangunan; mesin merek/model; kendaraan model/jarak tempuh. Nol bukan data kosong. Tidak ada request detail per kartu. */
+        PublicCardAttributes: {
+            land_area_m2?: number;
+            building_area_m2?: number;
+            brand_or_manufacturer?: string;
+            model_or_type?: string;
+            mileage_km?: number;
+        };
+        /** @description Hanya atribut kategori publik; field yang tidak tersedia dihilangkan, angka nol dipertahankan. */
+        PublicAttributes: {
+            land_area_m2?: number;
+            building_area_m2?: number;
+            floor_count?: number;
+            manufacture_year?: number;
+            mileage_km?: number;
+            brand_or_manufacturer?: string;
+            model_or_type?: string;
+            brand?: string;
+            public_capacity?: string;
+            /** @enum {string} */
+            public_condition?: "SANGAT_BAIK" | "BAIK" | "CUKUP" | "PERLU_PERBAIKAN";
+            /** @enum {string} */
+            contour?: "DATAR" | "MIRING" | "BERKONTUR";
+            /** @enum {string} */
+            road_access?: "RODA_DUA" | "MOBIL" | "TRUK";
+            /** @enum {string} */
+            public_usage?: "HUNIAN" | "KOMERSIAL" | "PERKANTORAN" | "PERGUDANGAN" | "INDUSTRI" | "SERBAGUNA";
+            /** @enum {string} */
+            transmission?: "MANUAL" | "OTOMATIS";
+            /** @enum {string} */
+            fuel_type?: "BENSIN" | "DIESEL" | "LISTRIK" | "HIBRIDA" | "GAS";
         };
         PublicInstitution: {
             public_slug: string;
@@ -536,6 +641,13 @@ export interface components {
             office_city_regency: string;
             office_province: string;
             published_asset_count: number;
+            /** @description Detail only. Source profile event aggregate version applied by SJ, not a bank draft revision or proof of current availability after the response. */
+            public_profile_version?: number;
+            /**
+             * Format: uri
+             * @description Detail only. Canonical profile page from configured website origin; null when not configured. Never inferred from API origin.
+             */
+            public_page_url?: string | null;
         };
         PublicTaxonomy: {
             /** @constant */
@@ -591,6 +703,14 @@ export interface components {
             office_province: string;
             /** Format: date-time */
             profile_updated_at: string;
+        };
+        /** Profil BPRS Disembunyikan V1 */
+        "profile-hidden.schema": {
+            /** Format: uuid */
+            institution_id: string;
+            reason_code: string;
+            /** Format: date-time */
+            hidden_at: string;
         };
         /** Kontak WhatsApp Terverifikasi V1 */
         "whatsapp-contact.schema": {
@@ -784,7 +904,7 @@ export interface components {
             /** @constant */
             schema_version: 1;
             /** @enum {unknown} */
-            event_type: "UPSERT_BPRS_PROFILE" | "UPSERT_WHATSAPP_CONTACT" | "REVOKE_WHATSAPP_CONTACT" | "UPSERT_PUBLICATION_SNAPSHOT" | "UNPUBLISH_PUBLICATION" | "ARCHIVE_PUBLICATION" | "REVOKE_MEDIA";
+            event_type: "UPSERT_BPRS_PROFILE" | "HIDE_BPRS_PROFILE" | "UPSERT_WHATSAPP_CONTACT" | "REVOKE_WHATSAPP_CONTACT" | "UPSERT_PUBLICATION_SNAPSHOT" | "UNPUBLISH_PUBLICATION" | "ARCHIVE_PUBLICATION" | "REVOKE_MEDIA";
             /** Format: uuid */
             institution_id: string;
             /** Format: uuid */
@@ -798,6 +918,10 @@ export interface components {
             /** @constant */
             event_type?: "UPSERT_BPRS_PROFILE";
             payload?: components["schemas"]["profile.schema"];
+        } | {
+            /** @constant */
+            event_type?: "HIDE_BPRS_PROFILE";
+            payload?: components["schemas"]["profile-hidden.schema"];
         } | {
             /** @constant */
             event_type?: "UPSERT_WHATSAPP_CONTACT";
@@ -1018,6 +1142,41 @@ export interface operations {
             500: components["responses"]["InternalError"];
         };
     };
+    getPublicMedia: {
+        parameters: {
+            query?: {
+                variant?: "main" | "card" | "thumb";
+            };
+            header?: never;
+            path: {
+                mediaId: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description WebP tanpa metadata privat; media lama tanpa varian menggunakan derivative main. Cache-Control no-store. */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "image/webp": string;
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            404: components["responses"]["NotFound"];
+            /** @description Penyimpanan gambar sementara tidak tersedia */
+            503: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ErrorResponse"];
+                };
+            };
+        };
+    };
     createMediaUploadSession: {
         parameters: {
             query?: never;
@@ -1190,13 +1349,39 @@ export interface operations {
             404: components["responses"]["NotFound"];
         };
     };
+    getPublicShowcase: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Etalase acak, termasuk daftar kosong */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        items: components["schemas"]["PublicAssetCard"][];
+                        next_cursor: null;
+                    };
+                };
+            };
+            400: components["responses"]["BadRequest"];
+            429: components["responses"]["TooManyRequests"];
+        };
+    };
     listPublicAssets: {
         parameters: {
             query?: {
                 cursor?: components["parameters"]["Cursor"];
                 limit?: components["parameters"]["Limit"];
                 q?: string;
-                category?: string;
+                category?: "TANAH" | "BANGUNAN" | "MESIN_PERALATAN" | "KENDARAAN";
+                /** @description Kode taxonomy; harus sesuai category jika keduanya diberikan. */
                 subcategory?: string;
                 province?: string;
                 city_regency?: string;
@@ -1681,6 +1866,36 @@ export interface operations {
             401: components["responses"]["Unauthorized"];
             403: components["responses"]["Forbidden"];
             404: components["responses"]["NotFound"];
+        };
+    };
+    retryDeadLetterJob: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                jobId: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["OpsReason"];
+            };
+        };
+        responses: {
+            /** @description Retry dicatat dan dijadwalkan tanpa mengubah payload */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["OpsActionResult"];
+                };
+            };
+            401: components["responses"]["Unauthorized"];
+            403: components["responses"]["Forbidden"];
+            409: components["responses"]["Conflict"];
+            422: components["responses"]["Unprocessable"];
         };
     };
     getOperationsHealth: {

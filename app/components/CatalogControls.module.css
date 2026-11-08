@@ -1,0 +1,54 @@
+.combobox { display: grid; gap: var(--space-2); min-width: 0; color: var(--color-text); }
+.combobox > label, .select > label { font-size: var(--type-meta); font-weight: 600; color: var(--color-text-supporting); }
+.comboControl { display: grid; grid-template-columns: 18px minmax(0, 1fr) auto; align-items: center; gap: var(--space-2); padding-left: var(--space-3); min-height: 50px; border: 1px solid var(--color-control-border); border-radius: var(--radius-control); background: var(--color-surface); transition: border-color var(--motion-fast), box-shadow var(--motion-fast); }
+.comboControl:hover { border-color: var(--color-link); }
+.inputActions { display: flex; align-items: center; padding-right: 3px; }
+.clear { display: grid; place-items: center; width: 32px; height: 44px; border: 0; border-radius: var(--radius-control); background: transparent; color: var(--color-text-supporting); cursor: pointer; }
+.clear svg { width: 16px; height: 16px; }
+.clear[data-hovered] { background: var(--color-interactive-subtle); color: var(--color-link); }
+.clear[data-focus-visible], .more[data-focus-visible] { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.comboControl > svg { width: 18px; height: 18px; color: var(--color-link); }
+.comboControl input { width: 100%; min-width: 0; height: 46px; padding: 0; border: 0; background: transparent; box-shadow: none; color: var(--color-text); font: 400 1rem/1.5 var(--font-body); }
+.comboControl input::placeholder { color: var(--color-placeholder); }
+.comboControl input:focus-visible { outline: none; }
+.comboControl:focus-within { border-color: var(--color-focus); box-shadow: 0 0 0 1px var(--color-focus); }
+.comboTrigger { width: 36px; min-height: 44px; display: grid; place-items: center; border: 0; border-radius: 0 var(--radius-control) var(--radius-control) 0; background: transparent; color: var(--color-text-supporting); cursor: pointer; }
+.comboTrigger svg, .selectTrigger svg { width: 18px; height: 18px; transition: transform var(--motion-fast); }
+.combobox[data-open] .comboTrigger svg, .select[data-open] .selectTrigger > svg { transform: rotate(180deg); }
+.comboTrigger:hover { color: var(--color-link); background: var(--color-surface-subtle); }
+.description { font: 400 var(--type-index)/1.5 var(--font-body); color: var(--color-text-supporting); }
+/* Only the list scrolls. Width is independent of the narrow input inside the trigger. */
+.popover { z-index: 520; display: flex; flex-direction: column; width: min(max(360px, var(--trigger-width, 0px)), calc(100vw - 24px)); max-width: calc(100vw - 24px); max-height: var(--available-height); overflow: hidden; border: 1px solid var(--color-border); border-radius: var(--radius-surface); background: var(--color-surface-elevated); color: var(--color-text); box-shadow: var(--shadow-modal); transform-origin: var(--trigger-anchor-point); pointer-events: auto; }
+.pickerHeading { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 4px 12px; padding: 14px 16px 10px; flex-shrink: 0; font: 600 var(--type-meta)/1.4 var(--font-body); }
+.pickerContents { display: contents; }
+.pickerHeading span { font-size: var(--type-index); font-weight: 400; color: var(--color-text-supporting); }
+.pickerFooter { flex-shrink: 0; padding: 10px 16px; border-top: 1px solid var(--color-divider); background: var(--color-surface-subtle); }
+.pickerFooter p { margin: 0; color: var(--color-text-supporting); font: 400 var(--type-index)/1.5 var(--font-body); }
+.more { width: 100%; min-height: 44px; margin-top: 4px; padding: 6px 0; border: 0; background: transparent; color: var(--color-link); font: 600 var(--type-meta)/1.4 var(--font-body); text-align: left; cursor: pointer; }
+.more[data-hovered] { text-decoration: underline; text-underline-offset: 3px; }
+.more[aria-disabled="true"] { color: var(--color-disabled-text); cursor: default; text-decoration: none; }
+.popover[data-entering] { animation: controlsIn var(--motion-fast) var(--motion-ease); }
+.popover[data-exiting] { animation: controlsOut 120ms ease; }
+.list { min-height: 0; max-height: 320px; overflow: auto; overscroll-behavior: contain; outline: none; padding: 6px; margin: 0; scroll-padding-block: 6px; scrollbar-width: thin; scrollbar-color: var(--color-control-border) transparent; }
+.option { display: grid; grid-template-columns: 40px minmax(0, 1fr) 18px; gap: 10px; align-items: center; min-height: 62px; padding: 10px; border-radius: var(--radius-control); cursor: pointer; outline: none; color: var(--color-text); transition: background-color 120ms ease; }
+.option[data-focused], .selectOption[data-focused] { background: var(--color-interactive-hover); }
+.option[data-selected], .selectOption[data-selected] { background: var(--color-interactive-subtle); color: var(--color-link); }
+.option[data-focus-visible], .selectOption[data-focus-visible] { outline: 2px solid var(--color-focus); outline-offset: -2px; }
+.option > svg, .selectOption > svg { width: 18px; height: 18px; color: var(--color-link); }
+.copy { display: grid; gap: 3px; min-width: 0; }
+.copy > [slot="label"] { font: 600 var(--type-meta)/1.4 var(--font-body); overflow-wrap: anywhere; }
+.copy > [slot="description"] { color: var(--color-text-supporting); font: 400 var(--type-index)/1.4 var(--font-body); overflow-wrap: anywhere; }
+.mark { display: grid; place-items: center; width: 40px; height: 40px; border-radius: 8px; background: var(--color-surface-subtle); color: var(--color-link); overflow: hidden; }
+.mark > svg { width: 22px; height: 22px; }
+.mark :global(.bprs-mark) { width: 40px; height: 40px; margin: 0; padding: 3px; border: 1px solid var(--color-border); border-radius: 8px; background: var(--color-logo-surface); }
+.empty { display: flex; align-items: center; gap: 10px; padding: 18px 14px; color: var(--color-text-supporting); font: 400 var(--type-meta)/1.5 var(--font-body); }
+.select { display: flex; align-items: center; gap: var(--space-3); min-width: 0; }
+.selectTrigger { display: flex; align-items: center; justify-content: space-between; gap: var(--space-4); min-height: 48px; padding: 10px 14px; border: 1px solid var(--color-control-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); font: 600 var(--type-meta)/1.5 var(--font-body); cursor: pointer; }
+.selectTrigger[data-hovered] { border-color: var(--color-link); background: var(--color-surface-subtle); }
+.selectTrigger[data-focus-visible] { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.selectTrigger[data-disabled] { background: var(--color-disabled-surface); color: var(--color-disabled-text); border-color: var(--color-disabled-border); cursor: not-allowed; }
+.selectPopover { width: max(180px, var(--trigger-width, 0px)); }
+.selectOption { display: flex; align-items: center; justify-content: space-between; gap: 16px; min-height: 44px; padding: 10px 12px; outline: none; border-radius: var(--radius-control); font-size: var(--type-meta); cursor: pointer; }
+@keyframes controlsIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+@keyframes controlsOut { to { opacity: 0; } }
+@media (prefers-reduced-motion: reduce) { .popover[data-entering], .popover[data-exiting] { animation: none; } .comboControl, .comboTrigger svg, .selectTrigger svg, .option { transition: none; } }

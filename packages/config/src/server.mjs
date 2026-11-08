@@ -1,4 +1,5 @@
 import path from "node:path";
+import { createPrivateKey, createPublicKey } from "node:crypto";
 import { z } from "zod";
 
 const booleanText = z
@@ -23,6 +24,7 @@ const rawSchema = z.object({
   SJ_REDIS_URL: optionalUrl,
   SJ_PUBLIC_API_BASE_URL: z.url().default("http://127.0.0.1:4100"),
   SJ_PUBLIC_MEDIA_BASE_URL: z.url().default("http://127.0.0.1:4100/v1/public/media"),
+  SJ_PUBLIC_WEBSITE_ORIGIN: optionalUrl,
   SJ_STORAGE_PROVIDER: z.enum(["FILESYSTEM", "S3_COMPATIBLE"]).default("FILESYSTEM"),
   SJ_STORAGE_ROOT: z.string().optional(),
   SJ_S3_ENDPOINT: optionalUrl,
@@ -43,12 +45,30 @@ const rawSchema = z.object({
   SJ_RATE_LIMIT_OPS_AUTH_PER_MINUTE: z.coerce.number().int().positive().max(30).optional(),
   SJ_MALWARE_SCAN_MODE: z.enum(["CLAMAV", "TEST_SAFE"]).default("CLAMAV"),
   SJ_CLAMDSCAN_COMMAND: z.string().min(1).default("clamdscan"),
+  SJ_CLAMAV_DOCKER_CONTAINER: z.string().regex(/^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$/).optional(),
   SJ_OPS_ENCRYPTION_KEY_BASE64: z.string().optional(),
   SJ_OPS_SESSION_SECRET: z.string().min(32).optional(),
   SJ_PUBLIC_SITE_ENABLED: booleanText.default(false),
   SJ_INGEST_ENABLED: booleanText.default(false),
   SJ_MEDIA_UPLOAD_ENABLED: booleanText.default(false),
   SJ_WORKER_ENABLED: booleanText.default(false),
+  SJ_CONTROL_MONITORING_ENABLED: booleanText.default(false),
+  SJ_CONTROL_RECOVERY_ENABLED: booleanText.default(false),
+  SJ_CONTROL_RECOVERY_BINDINGS: z.string().max(262144).optional(),
+  SJ_CONTROL_RECOVERY_AUDIENCE: z.string().min(1).max(150).regex(/^[^\r\n]+$/).optional(),
+  SJ_CONTROL_RECOVERY_RESPONSE_KEY_ID: z.string().regex(/^[A-Za-z0-9._-]{2,100}$/).optional(),
+  SJ_CONTROL_RECOVERY_RESPONSE_PRIVATE_KEY: z.string().optional(),
+  SJ_CONTROL_MONITORING_INSTANCE_ID: z.string().optional(),
+  SJ_CONTROL_MONITORING_KEY_ID: z.string().optional(),
+  SJ_CONTROL_MONITORING_PUBLIC_KEY: z.string().optional(),
+  SJ_CONTROL_MONITORING_RESPONSE_KEY_ID: z.string().optional(),
+  SJ_CONTROL_MONITORING_RESPONSE_PRIVATE_KEY: z.string().optional(),
+  SJ_CONTROL_MONITORING_AUDIENCE: z.string().optional(),
+  SJ_CONTROL_MONITORING_FRONTEND_URL: optionalUrl,
+  SJ_CONTROL_MONITORING_PROBE_TIMEOUT_MS: z.coerce.number().int().min(250).max(30000).default(2500),
+  SJ_WORKER_HEARTBEAT_KEY: z.string().regex(/^[a-z0-9][a-z0-9:_-]{2,120}$/).default("seputarjaminan:worker-heartbeat:central"),
+  SJ_WORKER_HEARTBEAT_INTERVAL_MS: z.coerce.number().int().min(1000).max(60000).default(5000),
+  SJ_WORKER_HEARTBEAT_TTL_MS: z.coerce.number().int().min(3000).max(180000).default(15000),
 });
 
 function requireValue(value, label, issues) {
@@ -167,6 +187,16 @@ function validateOpsEncryptionKey(value, issues) {
   }
 }
 
+function validateEd25519Key(value, label, kind, issues) {
+  if (!value) return;
+  try {
+    const key = kind === "public" ? createPublicKey(value) : createPrivateKey(value);
+    if (key.asymmetricKeyType !== "ed25519") issues.push(label + " wajib berupa key Ed25519.");
+  } catch {
+    issues.push(label + " wajib berupa key Ed25519 valid.");
+  }
+}
+
 function storageConfig(raw) {
   return {
     provider: raw.SJ_STORAGE_PROVIDER,
@@ -232,6 +262,7 @@ export function loadApiServerConfig(environment = process.env, options = {}) {
     redisUrl: raw.SJ_REDIS_URL,
     publicApiBaseUrl: raw.SJ_PUBLIC_API_BASE_URL,
     publicMediaBaseUrl: raw.SJ_PUBLIC_MEDIA_BASE_URL,
+    publicWebsiteOrigin: raw.SJ_PUBLIC_WEBSITE_ORIGIN,
     storage: storageConfig(raw),
     security: {
       signatureToleranceSeconds: raw.SJ_SIGNATURE_TOLERANCE_SECONDS,
@@ -252,9 +283,49 @@ export function loadApiServerConfig(environment = process.env, options = {}) {
       publicSite: raw.SJ_PUBLIC_SITE_ENABLED,
       ingest: raw.SJ_INGEST_ENABLED,
       mediaUpload: raw.SJ_MEDIA_UPLOAD_ENABLED,
+      controlMonitoring: raw.SJ_CONTROL_MONITORING_ENABLED,
+      controlRecovery: raw.SJ_CONTROL_RECOVERY_ENABLED,
+    },
+    controlRecovery: {
+      bindings: [], audience: raw.SJ_CONTROL_RECOVERY_AUDIENCE,
+      responseKeyId: raw.SJ_CONTROL_RECOVERY_RESPONSE_KEY_ID,
+      responsePrivateKey: raw.SJ_CONTROL_RECOVERY_RESPONSE_PRIVATE_KEY,
+    },
+    controlMonitoring: {
+      instanceId: raw.SJ_CONTROL_MONITORING_INSTANCE_ID,
+      keyId: raw.SJ_CONTROL_MONITORING_KEY_ID,
+      publicKey: raw.SJ_CONTROL_MONITORING_PUBLIC_KEY,
+      responseKeyId: raw.SJ_CONTROL_MONITORING_RESPONSE_KEY_ID,
+      responsePrivateKey: raw.SJ_CONTROL_MONITORING_RESPONSE_PRIVATE_KEY,
+      audience: raw.SJ_CONTROL_MONITORING_AUDIENCE,
+      frontendUrl: raw.SJ_CONTROL_MONITORING_FRONTEND_URL,
+      probeTimeoutMs: raw.SJ_CONTROL_MONITORING_PROBE_TIMEOUT_MS,
+      workerHeartbeatKey: raw.SJ_WORKER_HEARTBEAT_KEY,
     },
   };
   const issues = [];
+  if (config.flags.controlRecovery) {
+    for (const [label,value] of [['SJ_REDIS_URL',config.redisUrl],['SJ_CONTROL_RECOVERY_AUDIENCE',config.controlRecovery.audience],
+      ['SJ_CONTROL_RECOVERY_RESPONSE_KEY_ID',config.controlRecovery.responseKeyId],['SJ_CONTROL_RECOVERY_RESPONSE_PRIVATE_KEY',config.controlRecovery.responsePrivateKey]]) requireValue(value,label,issues);
+    validateEd25519Key(config.controlRecovery.responsePrivateKey,'SJ_CONTROL_RECOVERY_RESPONSE_PRIVATE_KEY','private',issues);
+    const binding=z.object({instanceId:z.uuid(),institutionId:z.uuid(),installationId:z.uuid(),
+      keyId:z.string().regex(/^[A-Za-z0-9._-]{2,100}$/),publicKey:z.string().min(1)}).strict();
+    try {
+      config.controlRecovery.bindings=z.array(binding).min(1).max(500).parse(JSON.parse(raw.SJ_CONTROL_RECOVERY_BINDINGS||'null'));
+      const ids=new Set();
+      for(const item of config.controlRecovery.bindings){
+        if(ids.has(item.instanceId))issues.push('SJ_CONTROL_RECOVERY_BINDINGS memiliki instance ganda.');
+        ids.add(item.instanceId);validateEd25519Key(item.publicKey,'SJ_CONTROL_RECOVERY_BINDINGS','public',issues);
+      }
+    }catch{issues.push('SJ_CONTROL_RECOVERY_BINDINGS wajib daftar binding eksplisit yang valid.');}
+  }
+  if (config.publicWebsiteOrigin) {
+    const website = new URL(config.publicWebsiteOrigin);
+    if (website.username || website.password || website.search || website.hash || !['', '/'].includes(website.pathname)
+      || (website.protocol !== 'https:' && !(raw.NODE_ENV !== 'production' && website.protocol === 'http:' && ['127.0.0.1', 'localhost', '[::1]'].includes(website.hostname)))) {
+      issues.push('SJ_PUBLIC_WEBSITE_ORIGIN wajib berupa origin website tepercaya, HTTPS kecuali loopback lokal non-production.');
+    } else config.publicWebsiteOrigin = website.origin;
+  }
   if (config.nodeEnv === "production") {
     requireDistinctDatabaseUrls([
       ["SJ_REGISTRY_DATABASE_URL", config.registryDatabaseUrl],
@@ -273,6 +344,39 @@ export function loadApiServerConfig(environment = process.env, options = {}) {
     validatePublicUrls(config.publicApiBaseUrl, config.publicMediaBaseUrl, issues);
     validateOpsEncryptionKey(config.security.opsEncryptionKeyBase64, issues);
   }
+  if (config.flags.controlMonitoring) {
+    for (const [label, value] of [
+      ["SJ_CONTROL_MONITORING_INSTANCE_ID", config.controlMonitoring.instanceId],
+      ["SJ_CONTROL_MONITORING_KEY_ID", config.controlMonitoring.keyId],
+      ["SJ_CONTROL_MONITORING_PUBLIC_KEY", config.controlMonitoring.publicKey],
+      ["SJ_CONTROL_MONITORING_RESPONSE_KEY_ID", config.controlMonitoring.responseKeyId],
+      ["SJ_CONTROL_MONITORING_RESPONSE_PRIVATE_KEY", config.controlMonitoring.responsePrivateKey],
+      ["SJ_CONTROL_MONITORING_AUDIENCE", config.controlMonitoring.audience],
+      ["SJ_CONTROL_MONITORING_FRONTEND_URL", config.controlMonitoring.frontendUrl],
+      ["SJ_REDIS_URL", config.redisUrl],
+    ]) requireValue(value, label, issues);
+    if (config.controlMonitoring.instanceId && !/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(config.controlMonitoring.instanceId)) {
+      issues.push("SJ_CONTROL_MONITORING_INSTANCE_ID wajib UUID valid.");
+    }
+    for (const [label, value] of [["SJ_CONTROL_MONITORING_KEY_ID", config.controlMonitoring.keyId], ["SJ_CONTROL_MONITORING_RESPONSE_KEY_ID", config.controlMonitoring.responseKeyId]]) {
+      if (value && !/^[A-Za-z0-9._-]{2,100}$/.test(value)) issues.push(label + " tidak valid.");
+    }
+    if (config.controlMonitoring.audience && (config.controlMonitoring.audience.length > 150 || /[\r\n]/.test(config.controlMonitoring.audience))) {
+      issues.push("SJ_CONTROL_MONITORING_AUDIENCE tidak valid.");
+    }
+    validateEd25519Key(config.controlMonitoring.publicKey, "SJ_CONTROL_MONITORING_PUBLIC_KEY", "public", issues);
+    validateEd25519Key(config.controlMonitoring.responsePrivateKey, "SJ_CONTROL_MONITORING_RESPONSE_PRIVATE_KEY", "private", issues);
+    if (config.controlMonitoring.frontendUrl) {
+      const frontendUrl = new URL(config.controlMonitoring.frontendUrl);
+      if (frontendUrl.username || frontendUrl.password || frontendUrl.search || frontendUrl.hash ||
+          (frontendUrl.pathname.replace(/\/+$/, "") || "/") !== "/") {
+        issues.push("SJ_CONTROL_MONITORING_FRONTEND_URL wajib berupa origin tanpa credential, path, query, atau fragment.");
+      }
+      if (config.nodeEnv === "production" && frontendUrl.protocol !== "https:") {
+        issues.push("SJ_CONTROL_MONITORING_FRONTEND_URL wajib HTTPS di production.");
+      }
+    }
+  }
   return finishConfig(config, options, issues);
 }
 
@@ -283,10 +387,12 @@ export function loadWorkerServerConfig(environment = process.env, options = {}) 
     service: "worker",
     nodeEnv: raw.NODE_ENV,
     workerDatabaseUrl: raw.SJ_WORKER_DATABASE_URL || fallbackDatabaseUrl,
+    redisUrl: raw.SJ_REDIS_URL,
     storage: storageConfig(raw),
     security: { mediaFileMaxBytes: raw.SJ_MEDIA_FILE_MAX_BYTES },
-    malware: { mode: raw.SJ_MALWARE_SCAN_MODE, command: raw.SJ_CLAMDSCAN_COMMAND },
+    malware: { mode: raw.SJ_MALWARE_SCAN_MODE, command: raw.SJ_CLAMDSCAN_COMMAND, ...(raw.SJ_CLAMAV_DOCKER_CONTAINER ? { dockerContainer: raw.SJ_CLAMAV_DOCKER_CONTAINER } : {}) },
     flags: { worker: raw.SJ_WORKER_ENABLED },
+    heartbeat: { key: raw.SJ_WORKER_HEARTBEAT_KEY, intervalMs: raw.SJ_WORKER_HEARTBEAT_INTERVAL_MS, ttlMs: raw.SJ_WORKER_HEARTBEAT_TTL_MS },
   };
   const issues = [];
   if (config.nodeEnv === "production") {
@@ -295,9 +401,15 @@ export function loadWorkerServerConfig(environment = process.env, options = {}) 
     if (config.malware.mode !== "CLAMAV") {
       issues.push("Production wajib memakai malware scanner CLAMAV yang fail-closed.");
     }
+    requireValue(config.redisUrl, "SJ_REDIS_URL", issues);
+    validateRedisUrl(config.redisUrl, issues);
   }
+  if (config.heartbeat.ttlMs <= config.heartbeat.intervalMs * 2) issues.push("SJ_WORKER_HEARTBEAT_TTL_MS harus lebih besar dari dua kali interval heartbeat.");
   if (config.malware.mode === "TEST_SAFE" && config.nodeEnv !== "test") {
     issues.push("Mode TEST_SAFE hanya boleh digunakan oleh automated test.");
+  }
+  if (config.malware.dockerContainer && (config.nodeEnv === "production" || config.malware.mode !== "CLAMAV")) {
+    issues.push("Docker scanner hanya untuk CLAMAV lokal; production memakai clamdscan native.");
   }
   return finishConfig(config, options, issues);
 }

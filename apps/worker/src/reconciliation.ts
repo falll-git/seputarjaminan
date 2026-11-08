@@ -10,6 +10,7 @@ export function compareManifest(
   items: ManifestItem[],
   cursors: Array<{
     aggregateId: string;
+    aggregateType: string;
     aggregateVersion: number;
     expectedState: string;
     payloadChecksum: string;
@@ -24,6 +25,9 @@ export function compareManifest(
         code: "MISSING_CENTRAL_AGGREGATE",
         recommended_action: "RESEND_SNAPSHOT",
       }];
+    }
+    if (central.aggregateType !== item.aggregate_type) {
+      return [{ aggregate_id: item.aggregate_id, code: "AGGREGATE_TYPE_MISMATCH", recommended_action: "CONTACT_OPERATIONS" }];
     }
     if (central.aggregateVersion !== item.aggregate_version) {
       return [{

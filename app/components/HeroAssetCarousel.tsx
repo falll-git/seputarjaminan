@@ -1,122 +1,87 @@
 "use client";
 
-import { ArrowLeft, ArrowRight, ArrowUpRight, MapPin, ShieldCheck } from "@phosphor-icons/react";
+import { ArrowLeft, ArrowRight, MapPin, Pause, Play } from "@phosphor-icons/react";
 import useEmblaCarousel from "embla-carousel-react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
-import { useCallback, useEffect, useState, type KeyboardEvent } from "react";
+import { useCallback, useEffect, useRef, useState, useSyncExternalStore, type KeyboardEvent } from "react";
 import type { Asset } from "../data/catalog";
-import { pressFeedback, PUBLIC_MOTION_DURATION, PUBLIC_MOTION_EASE } from "../lib/public-motion";
 import PublicMedia from "./PublicMedia";
+import { StatusBadge } from "./ui";
+import styles from "./HeroAssetCarousel.module.css";
+
+const motionQuery = "(prefers-reduced-motion: reduce)";
+function subscribeMotion(change: () => void) {
+  const query = window.matchMedia(motionQuery);
+  query.addEventListener("change", change);
+  return () => query.removeEventListener("change", change);
+}
+const browserReducedMotion = () => window.matchMedia(motionQuery).matches;
+// Keep SSR and initial hydration identical; rotation starts only after preference is known.
+const serverReducedMotion = () => true;
 
 export default function HeroAssetCarousel({ slides }: { slides: Asset[] }) {
-  const reducedMotion = useReducedMotion();
+  const reducedMotion = useSyncExternalStore(subscribeMotion, browserReducedMotion, serverReducedMotion);
   const interactive = slides.length > 1;
-  const [viewportRef, embla] = useEmblaCarousel({ loop: false, align: "start", watchDrag: interactive });
+  const [viewportRef, embla] = useEmblaCarousel({ loop: interactive, align: "start", containScroll: false, watchDrag: interactive, duration: reducedMotion ? 0 : 20 });
+  const region = useRef<HTMLDivElement>(null);
+  const rotationWasPlaying = useRef(false);
   const [selected, setSelected] = useState(0);
-  const [canScrollPrev, setCanScrollPrev] = useState(false);
-  const [canScrollNext, setCanScrollNext] = useState(interactive);
-
-  const sync = useCallback(() => {
-    if (!embla) return;
-    setSelected(embla.selectedScrollSnap());
-    setCanScrollPrev(embla.canScrollPrev());
-    setCanScrollNext(embla.canScrollNext());
-  }, [embla]);
-
+  const [paused, setPaused] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [visible, setVisible] = useState(false);
+  const [tabVisible, setTabVisible] = useState(true);
+  const [inView, setInView] = useState<number[]>([0, 1]);
+  const playing = interactive && !reducedMotion && !paused;
+  const pause = useCallback(() => setPaused(true), []);
   useEffect(() => {
     if (!embla) return;
-    const frame = window.requestAnimationFrame(sync);
-    embla.on("select", sync);
-    embla.on("reInit", sync);
-    return () => {
-      window.cancelAnimationFrame(frame);
-      embla.off("select", sync);
-      embla.off("reInit", sync);
-    };
-  }, [embla, sync]);
-
-  const handleKeyDown = useCallback((event: KeyboardEvent<HTMLElement>) => {
-    if (!embla || !interactive) return;
-    if (event.key === "ArrowLeft" && embla.canScrollPrev()) {
-      event.preventDefault();
-      embla.scrollPrev();
-    }
-    if (event.key === "ArrowRight" && embla.canScrollNext()) {
-      event.preventDefault();
-      embla.scrollNext();
-    }
-  }, [embla, interactive]);
-
-  const active = slides[selected] ?? slides[0];
-  if (!active) return null;
-
-  return (
-    <section className="hero site-frame" aria-labelledby="hero-title">
-      <div className="hero-copy">
-        <p className="hero-kicker"><span>01</span> Katalog publik aset BPRS</p>
-        <h1 id="hero-title">Temukan aset.<br />Kenali penerbitnya.</h1>
-        <p className="hero-intro">Telusuri aset yang diterbitkan langsung oleh BPRS melalui ruwang, lengkap dengan lokasi dan jalur kontak penerbitnya.</p>
-        <div className="hero-actions">
-          <motion.a className="button-primary" href="/katalog" {...pressFeedback(reducedMotion)}><span>Jelajahi katalog</span><ArrowRight aria-hidden="true" /></motion.a>
-          <motion.a className="text-link" href="/bprs" {...pressFeedback(reducedMotion)}><span>Lihat BPRS penerbit</span><ArrowUpRight aria-hidden="true" /></motion.a>
+    const sync = () => { setSelected(embla.selectedScrollSnap()); setInView(embla.slidesInView()); };
+    const frame = requestAnimationFrame(sync);
+    embla.on("select", sync).on("slidesInView", sync).on("reInit", sync).on("pointerDown", pause);
+    return () => { cancelAnimationFrame(frame); embla.off("select", sync).off("slidesInView", sync).off("reInit", sync).off("pointerDown", pause); };
+  }, [embla, pause]);
+  useEffect(() => {
+    const observer = new IntersectionObserver(([entry]) => setVisible(entry.isIntersecting), { threshold: .35 });
+    if (region.current) observer.observe(region.current);
+    const update = () => setTabVisible(!document.hidden);
+    update(); document.addEventListener("visibilitychange", update);
+    return () => { observer.disconnect(); document.removeEventListener("visibilitychange", update); };
+  }, []);
+  useEffect(() => {
+    if (!embla || !playing || hovered || !visible || !tabVisible) return;
+    const timer = window.setTimeout(() => {
+      if (embla.canScrollNext()) embla.scrollNext(); else embla.scrollTo(0);
+    }, 6000);
+    return () => window.clearTimeout(timer);
+  }, [embla, playing, hovered, visible, tabVisible, selected]);
+  function move(direction: number) {
+    pause(); if (!embla) return;
+    if (direction > 0) { if (embla.canScrollNext()) embla.scrollNext(Boolean(reducedMotion)); else embla.scrollTo(0, Boolean(reducedMotion)); }
+    else { if (embla.canScrollPrev()) embla.scrollPrev(Boolean(reducedMotion)); else embla.scrollTo(slides.length - 1, Boolean(reducedMotion)); }
+  }
+  function keyboard(event: KeyboardEvent<HTMLElement>) {
+    if (event.key === "ArrowLeft" || event.key === "ArrowRight") { event.preventDefault(); move(event.key === "ArrowLeft" ? -1 : 1); }
+  }
+  if (!slides.length) return null;
+  return <div ref={region} className={styles.showcase} data-count={slides.length} role="region" aria-roledescription="carousel" aria-label="Jelajahi aset" onMouseEnter={() => setHovered(true)} onMouseLeave={() => setHovered(false)} onFocusCapture={pause}>
+    <div className={styles.viewport} ref={viewportRef} id="home-asset-carousel">
+      <div className={styles.slides}>{slides.map((asset, index) => <article className={styles.slide} key={asset.id} aria-roledescription="slide" aria-label={`${index + 1} dari ${slides.length}`}>
+        <a className={styles.photo} href={`/aset/${asset.slug}`} onKeyDown={keyboard} tabIndex={inView.includes(index) ? 0 : -1} aria-label={`Lihat foto dan detail ${asset.title}`}>
+          <PublicMedia src={asset.cover.url} alt={asset.cover.altText} width={asset.cover.width} height={asset.cover.height} sizes="(max-width: 760px) 85vw, 44vw" preload={index === 0} variant="card" />
+        </a>
+        <div className={styles.caption}>
+          <div className={styles.meta}><span>{asset.categoryLabel}</span><StatusBadge>{asset.status}</StatusBadge></div>
+          <h2><a href={`/aset/${asset.slug}`} tabIndex={inView.includes(index) ? 0 : -1}>{asset.title}</a></h2>
+          <p className={styles.location}><MapPin aria-hidden="true"/>{asset.city}, {asset.province}</p>
+          <div className={styles.foot}><span>{asset.publisher.name}</span><a href={`/aset/${asset.slug}`} tabIndex={inView.includes(index) ? 0 : -1}>Lihat detail <ArrowRight aria-hidden="true"/></a></div>
         </div>
-        <p className="hero-assurance"><ShieldCheck aria-hidden="true" /><span>Tanpa akun</span><i aria-hidden="true" /><span>Informasi lanjutan melalui BPRS</span></p>
-      </div>
-
-      <div
-        className={`hero-showcase ${interactive ? "is-interactive" : "is-single"}`}
-        role="region"
-        aria-roledescription="carousel"
-        aria-label="Preview aset terbaru"
-      >
-        <div className="hero-viewport" ref={viewportRef} id="home-asset-carousel">
-          <div className="hero-slides">
-            {slides.map((asset, index) => (
-              <a className="hero-slide" href={`/aset/${asset.slug}`} key={asset.id} aria-label={`${index + 1} dari ${slides.length}: buka detail ${asset.title}`} tabIndex={index === selected ? 0 : -1} onKeyDown={handleKeyDown}>
-                <PublicMedia
-                  src={asset.cover.url}
-                  alt={asset.cover.altText}
-                  width={asset.cover.width}
-                  height={asset.cover.height}
-                  sizes="(max-width: 900px) 94vw, 55vw"
-                  preload={asset.id === slides[0]?.id}
-                />
-              </a>
-            ))}
-          </div>
-        </div>
-
-        <div className="hero-folio" aria-hidden="true">{active.id.replace("-", " — ")}</div>
-        <div className="hero-caption" aria-live="polite" aria-atomic="true">
-          <AnimatePresence mode="wait" initial={false}>
-            <motion.div
-              className="hero-caption-copy"
-              key={active.id}
-              initial={reducedMotion ? false : { opacity: 0, y: 8 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={reducedMotion ? undefined : { opacity: 0, y: -8 }}
-              transition={{ duration: PUBLIC_MOTION_DURATION.standard, ease: PUBLIC_MOTION_EASE }}
-            >
-              <small>{active.categoryLabel} · {active.publisher.name}</small>
-              <a href={`/aset/${active.slug}`} onKeyDown={handleKeyDown}>{active.title}</a>
-              <span><MapPin aria-hidden="true" /> {active.city}, {active.province}</span>
-            </motion.div>
-          </AnimatePresence>
-          {interactive ? (
-            <div className="hero-navigation">
-              <div className="hero-progress" aria-label={`Slide ${selected + 1} dari ${slides.length}`}>
-                <span>{String(selected + 1).padStart(2, "0")}</span>
-                <i><b style={{ width: `${((selected + 1) / slides.length) * 100}%` }} /></i>
-                <span>{String(slides.length).padStart(2, "0")}</span>
-              </div>
-              <div className="hero-arrows">
-                <motion.button type="button" onClick={() => embla?.scrollPrev()} onKeyDown={handleKeyDown} disabled={!canScrollPrev} aria-controls="home-asset-carousel" aria-label="Aset sebelumnya" {...pressFeedback(reducedMotion)}><ArrowLeft aria-hidden="true" /></motion.button>
-                <motion.button type="button" onClick={() => embla?.scrollNext()} onKeyDown={handleKeyDown} disabled={!canScrollNext} aria-controls="home-asset-carousel" aria-label="Aset berikutnya" {...pressFeedback(reducedMotion)}><ArrowRight aria-hidden="true" /></motion.button>
-              </div>
-            </div>
-          ) : null}
-        </div>
-      </div>
-    </section>
-  );
+      </article>)}</div>
+    </div>
+    {interactive && <div className={styles.navigation}>
+      <button type="button" aria-label="Aset sebelumnya" aria-controls="home-asset-carousel" onKeyDown={keyboard} onClick={() => move(-1)}><ArrowLeft aria-hidden="true"/></button>
+      <div className={styles.dots} aria-label="Pilih aset">{slides.map((asset, index) => <button type="button" key={asset.id} aria-label={`Tampilkan aset ${index + 1}`} aria-current={selected === index ? "true" : undefined} onClick={() => { pause(); embla?.scrollTo(index, Boolean(reducedMotion)); }}><span/></button>)}</div>
+      <button type="button" aria-label="Aset berikutnya" aria-controls="home-asset-carousel" onKeyDown={keyboard} onClick={() => move(1)}><ArrowRight aria-hidden="true"/></button>
+      {!reducedMotion && <button type="button" aria-label={playing ? "Jeda carousel" : "Putar carousel"} onPointerDown={() => { rotationWasPlaying.current = playing; }} onClick={event => setPaused(event.detail > 0 ? rotationWasPlaying.current : !paused)}>{playing ? <Pause aria-hidden="true"/> : <Play aria-hidden="true"/>}</button>}
+      <span className="sr-only" aria-live={playing ? "off" : "polite"}>Aset {selected + 1} dari {slides.length}</span>
+    </div>}
+  </div>;
 }

@@ -45,7 +45,9 @@ jobs:
       DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seputarjaminan_ci?schema=public
       SJ_TEST_OWNER_DATABASE_URL: postgresql://postgres:postgres@postgres:5432/seputarjaminan_ci?schema=public
       SJ_REDIS_URL: redis://redis:6379/0
+      SJ_TEST_REDIS_URL: redis://redis:6379/0
       SJ_CI_ALLOW_DISPOSABLE_DATABASE: "true"
+      SJ_TEST_DISPOSABLE_MARKER: "CI:${{ github.run_id }}:${{ github.run_attempt }}"
       SJ_STORAGE_ROOT: ${{ github.workspace }}/.ci-storage
       SJ_STORAGE_STOP_FREE_BYTES: "1"
     steps:
@@ -87,11 +89,16 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Verify reviewed braces fork integrity and depth regression
+        run: node scripts/verify-braces-fork.cjs
+
       - name: Validate production configuration templates
         run: npm run config:production:validate
 
       - name: Verify immutable migrations
-        run: npm run ci:migrations:check
+        run: |
+          npm run ci:migrations:check
+          node --test tests/migration-integrity.test.mjs
 
       - name: Provision disposable PostgreSQL roles
         run: npm run ci:database:provision
@@ -112,9 +119,20 @@ jobs:
 
       - name: Validate contracts and generated types
         run: |
-          npm run contracts:generate
-          git -C "$GITHUB_WORKSPACE" -c safe.directory="$GITHUB_WORKSPACE" diff --exit-code -- packages/contracts/generated/openapi.d.ts
+          node scripts/check-contract-drift.mjs
           npm run contracts:test
+
+      - name: Foundation, public controls and operational safety guards
+        run: |
+          npm run test:foundation
+          npm run test:public-controls
+          npm run test:local-config
+          npm run test:local-prerequisites
+          npm run test:database:guards
+          npm run ci:repository:audit
+
+      - name: Read-only dependency audit
+        run: npm audit --audit-level=high
 
       - name: Lint
         run: npm run lint

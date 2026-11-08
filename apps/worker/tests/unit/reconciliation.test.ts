@@ -8,7 +8,7 @@ test("reconciliation hanya menghasilkan tindakan aman dan tidak mengubah data", 
     { aggregate_type: "PUBLICATION", aggregate_id: "b", aggregate_version: 1, expected_public_state: "UNPUBLISHED", payload_checksum: "b".repeat(64) },
   ];
   const result = compareManifest(items, [
-    { aggregateId: "a", aggregateVersion: 1, expectedState: "PUBLISHED", payloadChecksum: "a".repeat(64) },
+    { aggregateId: "a", aggregateType: "PUBLICATION", aggregateVersion: 1, expectedState: "PUBLISHED", payloadChecksum: "a".repeat(64) },
   ]);
   assert.deepEqual(result, [
     { aggregate_id: "a", code: "AGGREGATE_VERSION_MISMATCH", recommended_action: "RESEND_SNAPSHOT" },

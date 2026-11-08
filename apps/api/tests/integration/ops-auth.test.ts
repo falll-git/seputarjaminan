@@ -8,6 +8,7 @@ import { createApp } from "../../src/app.js";
 import { createDatabaseClients } from "../../src/database.js";
 import { encryptSecret, totpCode } from "../../src/ops-crypto.js";
 import { hashOpsSecret } from "../../src/ops-auth.js";
+import { verifyDisposableDatabase } from "./disposable-target.js";
 
 const { Client } = pg;
 const ownerUrl = process.env.SJ_TEST_OWNER_DATABASE_URL;
@@ -26,6 +27,12 @@ test("ops login wajib MFA+CSRF dan onboarding tercatat tanpa private key", {
 }, async (context) => {
   const owner = new Client({ connectionString: ownerUrl! });
   await owner.connect();
+  try { await verifyDisposableDatabase(owner); }
+  catch (error) { await owner.end(); throw error; }
+  try {
+    assert.equal((await owner.query("SELECT count(*)::int n FROM ops_users WHERE id=$1", [opsUserId])).rows[0].n, 0, "Existing fixture requires explicit recovery");
+    assert.equal((await owner.query("SELECT count(*)::int n FROM institutions WHERE public_slug='bprs-ops-sintetis'")).rows[0].n, 0, "Existing institution is not owned by this run");
+  } catch (error) { await owner.end(); throw error; }
   const databases = createDatabaseClients({
     registryDatabaseUrl: opsUrl!,
     ingestDatabaseUrl: opsUrl!,
@@ -36,7 +43,7 @@ test("ops login wajib MFA+CSRF dan onboarding tercatat tanpa private key", {
     await owner.query("DELETE FROM quarantine_records WHERE subject_id = $1", [mediaId]);
     await owner.query("DELETE FROM media_objects WHERE id = $1", [mediaId]);
     await owner.query("DELETE FROM institution_keys WHERE key_id = $1", [keyId]);
-    await owner.query("DELETE FROM institution_installations WHERE installation_name = 'Instalasi Ops Sintetis'");
+    await owner.query("DELETE FROM institution_installations WHERE institution_id IN (SELECT id FROM institutions WHERE public_slug='bprs-ops-sintetis')");
     await owner.query("DELETE FROM institutions WHERE public_slug = 'bprs-ops-sintetis'");
     await owner.query("DELETE FROM ops_audit_logs WHERE ops_user_id = $1", [opsUserId]);
     await owner.query("DELETE FROM ops_users WHERE id = $1", [opsUserId]);
@@ -44,8 +51,6 @@ test("ops login wajib MFA+CSRF dan onboarding tercatat tanpa private key", {
     await owner.end();
   });
 
-  await owner.query("DELETE FROM ops_audit_logs WHERE ops_user_id = $1", [opsUserId]);
-  await owner.query("DELETE FROM ops_users WHERE id = $1", [opsUserId]);
   await owner.query(
     `INSERT INTO ops_users (id, email_normalized, display_name, password_hash, state, created_at, updated_at)
      VALUES ($1, $2, 'Operator Sintetis', $3, 'ACTIVE', now(), now())`,
@@ -133,12 +138,10 @@ test("ops login wajib MFA+CSRF dan onboarding tercatat tanpa private key", {
   await owner.query(
     `INSERT INTO media_objects
       (id, institution_id, source_media_id, logical_object_key, storage_backend, purpose, state, sha256,
-       detected_mime, size_bytes, width, height, delivery_object_key, delivery_mime,
-       delivery_sha256, delivery_size_bytes, delivery_width, delivery_height, ready_at, created_at, updated_at)
+       detected_mime, size_bytes, width, height, created_at, updated_at)
      VALUES
-      ($1, $2, gen_random_uuid(), 'delivery/test.webp', 'FILESYSTEM', 'BPRS_PUBLIC_MARK', 'READY', repeat('a', 64),
-       'image/webp', 128, 16, 16, 'delivery/test.webp', 'image/webp', repeat('b', 64), 96, 16, 16,
-       now(), now(), now())`,
+      ($1, $2, gen_random_uuid(), 'temporary/auth-test', 'FILESYSTEM', 'BPRS_PUBLIC_MARK', 'AWAITING_UPLOAD', repeat('a', 64),
+       'image/webp', 128, 16, 16, now(), now())`,
     [mediaId, onboarded.body.subject_id],
   );
   const quarantined = await request(app)
@@ -162,5 +165,5 @@ test("ops login wajib MFA+CSRF dan onboarding tercatat tanpa private key", {
     .send({});
   assert.equal(resolved.status, 200);
   const restoredState = await owner.query("SELECT state FROM media_objects WHERE id = $1", [mediaId]);
-  assert.equal(restoredState.rows[0].state, "READY");
+  assert.equal(restoredState.rows[0].state, "AWAITING_UPLOAD");
 });

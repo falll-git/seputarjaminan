@@ -31,6 +31,11 @@ const payloads = Object.freeze({
     office_province: "Jawa Barat",
     profile_updated_at: "2026-08-01T00:00:00.000Z",
   },
+  HIDE_BPRS_PROFILE: {
+    institution_id: ids.institution,
+    reason_code: "PROFILE_REMOVED",
+    hidden_at: "2026-08-02T00:00:00.000Z",
+  },
   UPSERT_WHATSAPP_CONTACT: {
     whatsapp_contact_id: ids.contact,
     institution_id: ids.institution,
@@ -101,7 +106,7 @@ const payloads = Object.freeze({
 });
 
 function aggregateIdFor(eventType) {
-  if (eventType === "UPSERT_BPRS_PROFILE") return ids.institution;
+  if (["UPSERT_BPRS_PROFILE", "HIDE_BPRS_PROFILE"].includes(eventType)) return ids.institution;
   if (eventType.includes("WHATSAPP")) return ids.contact;
   if (eventType === "REVOKE_MEDIA") return ids.media;
   return ids.publication;
@@ -124,7 +129,7 @@ function eventFor(eventType, overrides = {}) {
   return event;
 }
 
-test("tujuh jenis event menerima snapshot sintetis yang sesuai allowlist", () => {
+test("delapan jenis event menerima snapshot sintetis yang sesuai allowlist", () => {
   for (const eventType of Object.keys(payloads)) {
     const result = validateIntegrationEvent(eventFor(eventType));
     assert.equal(result.valid, true, eventType + ": " + JSON.stringify(result.errors));

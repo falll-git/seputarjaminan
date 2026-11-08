@@ -1,0 +1,9 @@
+.inner.inner { gap: var(--space-5); }
+.search { display: flex; align-items: center; flex: 1; min-width: 180px; max-width: 620px; }
+.search :global(.ui-search-input) { flex: 1; min-width: 0; }
+.search input { width: 100%; min-width: 0; }
+.inner :global(.desktop-nav) { gap: var(--space-5); white-space: nowrap; }
+@media (max-width: 1250px) {
+  .inner.inner { flex-wrap: wrap; padding-block: var(--space-3); row-gap: var(--space-3); }
+  .search { order: 5; flex-basis: 100%; max-width: none; }
+}

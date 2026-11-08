@@ -1,163 +1,66 @@
-"use client";
-
-import { ArrowRight, ArrowUpRight, Buildings, MapPin, MagnifyingGlass, X } from "@phosphor-icons/react";
-import { motion, useReducedMotion } from "motion/react";
+import { ArrowRight, ArrowUpRight, MapPin } from "@phosphor-icons/react/dist/ssr";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useState } from "react";
 import type { BprsProfile } from "@/app/data/catalog";
-import { revealOnce } from "@/app/lib/public-motion";
 import BprsMark from "./BprsMark";
+import DirectoryProvince from "./DirectoryProvince";
+import PublicDataState from "./PublicDataState";
+import { Button, SearchInput, TextLink } from "./ui";
+import styles from "../bprs/bprs.module.css";
 
-type BprsDirectoryProps = {
+type Props = {
   profiles: BprsProfile[];
   initialQuery?: string;
   initialProvince?: string;
+  currentCursor?: string;
   nextCursor?: string | null;
 };
-
 const SEARCH_THRESHOLD = 8;
 
 function directoryUrl(query: string, province: string, cursor?: string | null) {
   const params = new URLSearchParams();
-  if (query.trim()) params.set("q", query.trim());
-  if (province.trim()) params.set("province", province.trim());
+  if (query) params.set("q", query);
+  if (province) params.set("province", province);
   if (cursor) params.set("cursor", cursor);
-  return params.size ? `/bprs?${params.toString()}` : "/bprs";
+  return params.size ? `/bprs?${params}` : "/bprs";
 }
 
-export default function BprsDirectory({
-  profiles,
-  initialQuery = "",
-  initialProvince = "",
-  nextCursor,
-}: BprsDirectoryProps) {
-  const router = useRouter();
-  const reducedMotion = useReducedMotion();
-  const [query, setQuery] = useState(initialQuery);
-  const [province, setProvince] = useState(initialProvince);
+export default function BprsDirectory({ profiles, initialQuery = "", initialProvince = "", currentCursor = "", nextCursor }: Props) {
   const hasFilters = Boolean(initialQuery || initialProvince);
-  const isSingleFeature = profiles.length === 1 && !hasFilters && !nextCursor;
-  const showSearch = hasFilters || Boolean(nextCursor) || profiles.length >= SEARCH_THRESHOLD;
-
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    router.push(directoryUrl(query, province));
-  }
-
-  function clearFilters() {
-    setQuery("");
-    setProvince("");
-    router.push("/bprs");
-  }
-
-  return (
-    <section className={`bprs-directory${isSingleFeature ? " is-single" : " is-index"}`} aria-labelledby="bprs-directory-title">
-      <div className="bprs-directory-heading">
-        <div>
-          <p className="section-kicker">Penerbit aktif</p>
-          <h2 id="bprs-directory-title">Daftar BPRS</h2>
-        </div>
-        <p className="bprs-directory-count" aria-live="polite">
-          <strong>{String(profiles.length).padStart(2, "0")}</strong>
-          <span>BPRS pada halaman ini</span>
-        </p>
-      </div>
-
-      {showSearch && (
-        <form className="bprs-directory-filters" role="search" onSubmit={submit}>
-          <label className="bprs-search-field">
-            <span>Cari BPRS atau wilayah</span>
-            <span className="bprs-search-control">
-              <MagnifyingGlass aria-hidden="true" />
-              <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Nama BPRS atau kota" autoComplete="off" />
-            </span>
-          </label>
-
-          <label className="bprs-province-field">
-            <span>Provinsi kantor</span>
-            <input type="text" value={province} onChange={(event) => setProvince(event.target.value)} placeholder="Contoh: Jawa Barat" autoComplete="address-level1" />
-          </label>
-
-          <button className="bprs-filter-submit" type="submit">
-            <span>Tampilkan hasil</span>
-            <ArrowRight aria-hidden="true" />
-          </button>
-
-          {hasFilters && (
-            <button className="bprs-clear-filter" type="button" onClick={clearFilters}>
-              <X aria-hidden="true" />
-              <span>Atur ulang</span>
-            </button>
-          )}
-        </form>
-      )}
-
-      {isSingleFeature ? (
-        <motion.article
-          className="bprs-publisher-feature"
-          {...revealOnce(reducedMotion)}
-        >
-          <Link href={`/bprs/${profiles[0].slug}`} aria-label={`Buka profil ${profiles[0].name}`}>
-            <span className="bprs-feature-folio" aria-hidden="true">01</span>
-            <BprsMark profile={profiles[0]} />
-            <span className="bprs-feature-identity">
-              <small>Satu penerbit terhubung</small>
-              <strong>{profiles[0].name}</strong>
-              <span><MapPin aria-hidden="true" /> {profiles[0].city}, {profiles[0].province}</span>
-              <em>{profiles[0].description}</em>
-            </span>
-            <span className="bprs-feature-stat">
-              <strong>{String(profiles[0].publishedAssetCount).padStart(2, "0")}</strong>
-              <span>aset aktif</span>
-            </span>
-            <span className="bprs-profile-action">Lihat profil <ArrowUpRight aria-hidden="true" /></span>
-          </Link>
-        </motion.article>
-      ) : profiles.length ? (
-        <>
-          <ol className="bprs-index-list">
-            {profiles.map((profile, index) => (
-              <motion.li
-                className="bprs-index-row"
-                key={profile.slug}
-                {...revealOnce(reducedMotion, Math.min(index, 5) * 0.045)}
-              >
-                <Link href={`/bprs/${profile.slug}`} aria-label={`Buka profil ${profile.name}, ${profile.publishedAssetCount} aset aktif`}>
-                  <span className="bprs-index-number" aria-hidden="true">{String(index + 1).padStart(2, "0")}</span>
-                  <BprsMark profile={profile} />
-                  <span className="bprs-index-identity">
-                    <strong>{profile.name}</strong>
-                    <span><MapPin aria-hidden="true" /> {profile.city}, {profile.province}</span>
-                  </span>
-                  <span className="bprs-index-stats">
-                    <strong>{String(profile.publishedAssetCount).padStart(2, "0")}</strong>
-                    <span>aset aktif</span>
-                  </span>
-                  <span className="bprs-profile-action">Lihat profil <ArrowUpRight aria-hidden="true" /></span>
-                </Link>
-              </motion.li>
-            ))}
-          </ol>
-
-          {nextCursor && (
-            <Link className="directory-next-page" href={directoryUrl(initialQuery, initialProvince, nextCursor)}>
-              <span>Lihat BPRS berikutnya</span>
-              <ArrowRight aria-hidden="true" />
-            </Link>
-          )}
-        </>
-      ) : (
-        <div className="bprs-empty-state">
-          <Buildings aria-hidden="true" />
-          <div>
-            <p className="section-kicker">{hasFilters ? "Tidak ada hasil" : "Direktori belum tersedia"}</p>
-            <h3>{hasFilters ? "Belum ada BPRS yang cocok." : "Belum ada BPRS penerbit aktif."}</h3>
-            <p>{hasFilters ? "Periksa kembali nama atau provinsi yang dimasukkan." : "BPRS akan muncul setelah profil dan aset aktif diterbitkan melalui ruwang."}</p>
-            {hasFilters && <button type="button" onClick={clearFilters}>Tampilkan semua BPRS</button>}
-          </div>
-        </div>
-      )}
-    </section>
-  );
+  const isSingleFeature = profiles.length === 1 && !hasFilters && !currentCursor && !nextCursor;
+  const showSearch = hasFilters || Boolean(currentCursor || nextCursor) || profiles.length >= SEARCH_THRESHOLD;
+  return <section aria-label="Hasil direktori BPRS" className={styles.directory}>
+    {showSearch && <form className={styles.filters} action="/bprs" method="get" role="search" aria-label="Pencarian BPRS" key={`${initialQuery}/${initialProvince}/${currentCursor}`}>
+      <SearchInput label="Cari BPRS atau wilayah" name="q" defaultValue={initialQuery} placeholder="Nama BPRS atau kota" maxLength={100} />
+      <DirectoryProvince initialProvince={initialProvince} provinces={[...new Set(profiles.map(p=>p.province).filter(Boolean))].sort((a,b)=>a.localeCompare(b,"id"))} />
+      <Button type="submit">Tampilkan hasil <ArrowRight aria-hidden="true" /></Button>
+      <p>Pencarian diterapkan setelah menekan Tampilkan hasil.</p>
+    </form>}
+    <div className={styles.resultBar}>
+      <p><strong>{profiles.length}</strong> BPRS pada halaman ini</p>
+      {(hasFilters || currentCursor) && <TextLink href="/bprs">Atur ulang</TextLink>}
+    </div>
+    {hasFilters && <p className={styles.applied}>Hasil untuk {initialQuery && <span>“{initialQuery}”</span>}{initialQuery && initialProvince && " · "}{initialProvince && <span>Provinsi kantor: {initialProvince}</span>}</p>}
+    {profiles.length ? <ul className={`${styles.list} ${isSingleFeature ? styles.single : ""}`} data-bprs-list>
+      {profiles.map(profile => <li key={profile.slug}>
+        <Link className={styles.publisherLink} href={`/bprs/${profile.slug}`} prefetch={false} aria-label={`Buka profil ${profile.name}`}>
+          <span className={styles.logo}><BprsMark profile={profile} /></span>
+          <span className={styles.identity}>
+            <strong>{profile.name}</strong>
+            <span className={styles.location}><MapPin aria-hidden="true" />{profile.city}, {profile.province}</span>
+            {isSingleFeature && <span className={styles.summary}>{profile.description}</span>}
+          </span>
+          {Number.isSafeInteger(profile.publishedAssetCount) && profile.publishedAssetCount >= 0 && <span className={styles.count}><strong>{profile.publishedAssetCount.toLocaleString("id-ID")}</strong> aset tersedia</span>}
+          <span className={styles.action}>Lihat profil <ArrowUpRight aria-hidden="true" /></span>
+        </Link>
+      </li>)}
+    </ul> : <PublicDataState kind={hasFilters ? "no-results" : "empty"} scene={hasFilters ? "search" : "directory"}
+        title={hasFilters ? "Belum ada BPRS yang cocok." : currentCursor ? "Tidak ada BPRS pada halaman ini." : "Belum ada BPRS dengan aset tersedia."}
+        message={hasFilters ? "Coba nama, kota, atau provinsi kantor yang lain." : "Anda tetap dapat menjelajahi katalog atau kembali nanti."}>
+        {(hasFilters || currentCursor) ? <TextLink href="/bprs">Tampilkan semua BPRS</TextLink> : <TextLink href="/katalog">Buka katalog</TextLink>}
+    </PublicDataState>}
+    {(nextCursor || currentCursor) && <nav className={styles.pagination} aria-label="Halaman direktori">
+      {currentCursor && <TextLink href={directoryUrl(initialQuery, initialProvince)}>Kembali ke halaman pertama</TextLink>}
+      {nextCursor && <Link className="ui-button ui-button-secondary" href={directoryUrl(initialQuery, initialProvince, nextCursor)} prefetch={false}>Lihat BPRS berikutnya <ArrowRight aria-hidden="true" /></Link>}
+    </nav>}
+  </section>;
 }

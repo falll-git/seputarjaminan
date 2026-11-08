@@ -4,7 +4,7 @@ import test from "node:test";
 import Redis from "ioredis";
 import { RedisFixedWindowRateLimiter } from "../../src/rate-limit.js";
 
-const redisUrl = process.env.SJ_TEST_REDIS_URL || process.env.SJ_REDIS_URL;
+const redisUrl = process.env.SJ_TEST_REDIS_URL;
 
 test("disconnect aman ketika koneksi lazy belum pernah digunakan", async () => {
   const limiter = new RedisFixedWindowRateLimiter("redis://127.0.0.1:1/15");

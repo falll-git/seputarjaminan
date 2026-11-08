@@ -1,0 +1,16 @@
+.art { display: inline-block; width: min(240px, 100%); flex-shrink: 0; color: var(--color-link); vertical-align: middle; animation: artArrive 240ms var(--motion-ease) both; }
+.art svg { display: block; width: 100%; height: auto; }
+.paper { fill: var(--color-surface-elevated); }
+.sage { fill: color-mix(in srgb, var(--color-accent-surface) 55%, var(--color-surface)); }
+.wash { fill: var(--color-surface-subtle); }
+.shadow { fill: var(--color-border); opacity: .5; }
+.back { opacity: .75; }
+.detail { opacity: .55; }
+.front { transform-origin: center; transition: transform 180ms var(--motion-ease); }
+.small { width: 64px; }
+.errorIndex .art { max-width: 240px; width: 100%; }
+.errorIndex .art svg { width: 100%; height: auto; }
+@media (max-width: 720px) { .errorIndex .art { width: min(120px, 100%); justify-self: center; } }
+@media (hover: hover) { .art:not(.small):hover .front { transform: translateY(-2px); } }
+@keyframes artArrive { from { opacity: .6; transform: translateY(5px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) { .art { animation: none; } .front { transition: none; } .art:hover .front { transform: none; } }

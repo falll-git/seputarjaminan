@@ -1,0 +1,38 @@
+/* Photo-led asset cards. Metadata is deliberately secondary to title and location. */
+.card { min-width: 0; color: var(--color-text); display: flex; flex-direction: column; border: 1px solid var(--color-border); border-radius: var(--radius-surface); background: var(--color-surface); padding: var(--space-2); transition: border-color var(--motion-fast), box-shadow var(--motion-standard); }
+.photo { position: relative; display: block; aspect-ratio: 4 / 3; overflow: hidden; background: var(--color-media-placeholder); border-radius: calc(var(--radius-surface) - var(--space-2)); }
+.photo img { transition: transform var(--motion-standard) var(--motion-ease); }
+.photo:focus-visible { outline-offset: -4px; }
+.card:focus-within { border-color: var(--color-link); }
+.count { position: absolute; bottom: var(--space-3); right: var(--space-3); display: flex; align-items: center; gap: var(--space-1); background: var(--color-media-control); color: var(--color-on-media); padding: var(--space-1) var(--space-2); border-radius: var(--radius-control); font-size: var(--type-index); }
+.count svg { width: 16px; height: 16px; }
+.body { min-width: 0; padding: var(--space-4) var(--space-3) var(--space-2); display: flex; flex: 1; flex-direction: column; gap: var(--space-2); }
+.meta { display: flex; align-items: center; flex-wrap: wrap; gap: var(--space-2); justify-content: space-between; font-size: var(--type-index); color: var(--color-text-supporting); margin-bottom: var(--space-1); }
+.card h2 { font: var(--font-weight-semibold) 1.1875rem/1.4 var(--font-heading); letter-spacing: -.025em; margin: 0; overflow-wrap: anywhere; }
+.card h2 a:hover { color: var(--color-link-hover); text-decoration: underline; text-underline-offset: .2em; }
+.location { margin: 0; display: flex; align-items: start; gap: var(--space-1); font-size: var(--type-meta); color: var(--color-text-supporting); overflow-wrap: anywhere; }
+.location svg { width: 18px; height: 18px; flex: 0 0 auto; margin-top: 2px; }
+.publisher { display: flex; align-items: center; gap: var(--space-2); min-width: 0; margin-top: auto; padding-block: var(--space-4) var(--space-2); }
+.publisher > span:last-child { min-width: 0; display: grid; }
+.publisher small { color: var(--color-text-supporting); font-size: var(--type-index); }
+.publisher strong { font-size: var(--type-meta); font-weight: var(--font-weight-semibold); line-height: 1.35; overflow-wrap: anywhere; }
+.publisher:hover strong { text-decoration: underline; text-underline-offset: .2em; }
+.publisher :global(.bprs-mark) { width: 40px; height: 40px; border: 1px solid var(--color-border); border-radius: var(--radius-control); flex: 0 0 40px; }
+.publisher :global(.public-media--logo) { position: relative; width: 100%; height: 100%; }
+.foot { display: flex; align-items: center; flex-wrap: wrap; justify-content: space-between; gap: var(--space-2); border-top: 1px solid var(--color-divider); padding-top: var(--space-1); }
+.foot > span { color: var(--color-text-supporting); font-size: .75rem; letter-spacing: .025em; }
+.foot :global(.ui-text-link) { text-decoration: none; }
+.foot svg { padding: 7px; box-sizing: content-box; border-radius: 50%; background: var(--color-surface-subtle); transition: transform var(--motion-fast), background-color var(--motion-fast); }
+.specs { display: flex; flex-wrap: wrap; gap: var(--space-3) var(--space-6); margin: var(--space-2) 0 0; }
+.specs dt { color: var(--color-text-supporting); font-size: var(--type-index); }
+.specs dd { margin: 0; font-weight: var(--font-weight-semibold); font-size: var(--type-meta); overflow-wrap: anywhere; }
+.display { padding: 0; }
+.display .photo { aspect-ratio: 3 / 2; border-radius: calc(var(--radius-surface) - 1px) calc(var(--radius-surface) - 1px) 0 0; }
+.display .body { padding: var(--space-5) var(--space-5) var(--space-3); }
+.display h2 { font-size: clamp(1.25rem, 1.7vw, 1.5rem); }
+@media (hover: hover) {
+  .card:hover { border-color: var(--color-control-border); box-shadow: var(--shadow-card-hover); }
+  .card:hover .photo img { transform: scale(1.02); }
+  .foot a:hover svg { transform: translate(2px, -2px); background: var(--color-interactive-subtle); }
+}
+@media (prefers-reduced-motion: reduce) { .card, .photo img, .foot svg { transition: none; } .card:hover .photo img, .foot a:hover svg { transform: none; } }

@@ -5,14 +5,26 @@ import { constants } from "node:fs";
 import path from "node:path";
 
 const root = process.cwd();
+// A reproducible reviewed dev dependency is not a runtime backup. This exact
+// archive is allowed only after verifying its source, installed consumer and
+// regression guard. The blanket prohibition still applies to all other .tgz.
+const reviewedArchive = "vendor/ruwang-braces-depth-guard-3.0.3-ruwang.depth.1.tgz";
 const tracked = execFileSync("git", ["ls-files", "--cached", "--others", "--exclude-standard", "-z"], { cwd: root })
   .toString("utf8")
   .split("\0")
   .filter(Boolean);
+if (tracked.includes(reviewedArchive)) {
+  execFileSync(process.execPath, [path.join(root, "scripts/verify-braces-fork.cjs")], { cwd: root });
+}
+// Audit the working release candidate, including untracked additions. A tracked
+// deletion is legitimate (e.g. a removed component), not an unreadable source file.
+const deleted = new Set(execFileSync("git", ["ls-files", "--deleted", "-z"], { cwd: root })
+  .toString("utf8").split("\0").filter(Boolean));
+let removedCount = 0;
 
-const forbiddenDirectory = /^(?:node_modules|\.next|dist|out|coverage|test-results|playwright-report|quality-reports|outputs|work|previews)(?:\/|$)/u;
+const forbiddenDirectory = /^(?:node_modules|\.next|dist|out|coverage|test-results|playwright-report|quality-reports|output|outputs|work|previews)(?:\/|$)/u;
 const forbiddenFile = /(?:^|\/)(?:\.env(?!\.example$)|[^/]+\.(?:pem|key|p12|pfx|jks|keystore|sqlite|db|bak|dump|log|zip|rar|7z|tgz))$/iu;
-const textExtensions = new Set([".cjs", ".css", ".d.ts", ".html", ".js", ".json", ".jsx", ".md", ".mjs", ".prisma", ".sql", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml"]);
+const textExtensions = new Set([".cjs", ".css", ".cts", ".d.ts", ".html", ".js", ".json", ".jsx", ".md", ".mjs", ".mts", ".prisma", ".sql", ".toml", ".ts", ".tsx", ".txt", ".yaml", ".yml"]);
 const textBasenames = new Set([".env.example", ".gitignore", ".gitleaksignore", ".npmrc"]);
 const secretPatterns = [
   /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/u,
@@ -25,10 +37,15 @@ const problems = [];
 for (const relativePath of tracked) {
   const normalized = relativePath.replaceAll("\\", "/");
   if (forbiddenDirectory.test(normalized)) problems.push(`${normalized}: artifact build/test tidak boleh dilacak Git.`);
-  if (forbiddenFile.test(normalized)) problems.push(`${normalized}: file runtime/sensitif tidak boleh dilacak Git.`);
+  if (forbiddenFile.test(normalized) && normalized !== reviewedArchive) problems.push(`${normalized}: file runtime/sensitif tidak boleh dilacak Git.`);
 
   const absolutePath = path.join(root, relativePath);
-  const handle = await open(absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0));
+  let handle;
+  try { handle = await open(absolutePath, constants.O_RDONLY | (constants.O_NOFOLLOW || 0)); }
+  catch (error) {
+    if (error.code === "ENOENT" && deleted.has(relativePath)) { removedCount++; continue; }
+    throw error;
+  }
   let content;
   try {
     const metadata = await handle.stat();
@@ -66,4 +83,4 @@ for (const workflow of [".github/workflows/quality.yml", ".github/workflows/secu
 }
 
 assert.deepEqual(problems, [], problems.join("\n"));
-console.log(`Audit repository valid: ${tracked.length} file terlacak tanpa artifact atau file sensitif terlarang.`);
+console.log(`Audit repository valid: ${tracked.length - removedCount} file kandidat diperiksa; ${removedCount} penghapusan tracked. Tidak ada artifact atau file sensitif terlarang.`);

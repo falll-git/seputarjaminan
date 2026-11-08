@@ -1,6 +1,7 @@
 "use client";
 
-import { Buildings, ImageBroken } from "@phosphor-icons/react";
+import { Buildings } from "@phosphor-icons/react";
+import StateIllustration from "./StateIllustration";
 import Image from "next/image";
 import { useMemo, useState } from "react";
 import { publicMediaIdFromUrl } from "@/app/lib/public-media";
@@ -13,6 +14,7 @@ type PublicMediaProps = {
   width?: number;
   height?: number;
   kind?: "asset" | "logo";
+  variant?: "main" | "card" | "thumb";
   fit?: "cover" | "contain";
   sizes: string;
   preload?: boolean;
@@ -50,6 +52,7 @@ export default function PublicMedia({
   width,
   height,
   kind = "asset",
+  variant = kind === "logo" ? "thumb" : "main",
   fit = kind === "logo" ? "contain" : "cover",
   sizes,
   preload = false,
@@ -59,7 +62,7 @@ export default function PublicMedia({
   className = "",
 }: PublicMediaProps) {
   const baseState = useMemo(() => initialState(src, alt, decorative), [alt, decorative, src]);
-  const mediaKey = `${src}\n${alt}\n${decorative ? "decorative" : "informative"}`;
+  const mediaKey = `${src}\n${variant}\n${alt}\n${decorative ? "decorative" : "informative"}`;
   const [recordedState, setRecordedState] = useState<{ key: string; value: MediaState }>({
     key: mediaKey,
     value: baseState,
@@ -68,7 +71,9 @@ export default function PublicMedia({
   const setState = (value: MediaState) => setRecordedState({ key: mediaKey, value });
 
   const isFallback = state !== "loading" && state !== "ready";
-  const message = fallbackMessage(state, kind);
+  const message = !src.trim()
+    ? kind === "logo" ? "Logo BPRS belum tersedia" : "Foto aset belum tersedia"
+    : fallbackMessage(state, kind);
 
   return (
     <span
@@ -79,7 +84,7 @@ export default function PublicMedia({
 
       {!isFallback && (
         <Image
-          src={src}
+          src={variant === "main" ? src : `${src}?variant=${variant}`}
           alt={decorative ? "" : alt.trim()}
           fill
           sizes={sizes}
@@ -92,7 +97,9 @@ export default function PublicMedia({
               kind === "asset"
               && width !== undefined
               && height !== undefined
-              && (image.naturalWidth !== width || image.naturalHeight !== height)
+              && (variant === "main"
+                ? image.naturalWidth !== width || image.naturalHeight !== height
+                : Math.abs(image.naturalWidth * height - image.naturalHeight * width) > Math.max(width, height))
             ) {
               setState("invalid-ratio");
               return;
@@ -116,7 +123,7 @@ export default function PublicMedia({
               {initials && <strong aria-hidden="true">{initials}</strong>}
             </>
           ) : (
-            <ImageBroken aria-hidden="true" />
+            <StateIllustration scene="photo" small={compact} />
           )}
           {kind === "asset" && !compact && <span>{message}</span>}
         </span>

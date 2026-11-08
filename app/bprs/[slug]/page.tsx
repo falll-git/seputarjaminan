@@ -1,4 +1,4 @@
-import { ArrowLeft, ArrowUpRight, Buildings, MapPin } from "@phosphor-icons/react/dist/ssr";
+import { ArrowLeft, ArrowUpRight, MapPin } from "@phosphor-icons/react/dist/ssr";
 import type { Metadata } from "next";
 import Link from "next/link";
 import { notFound } from "next/navigation";
@@ -7,6 +7,8 @@ import BprsMark from "@/app/components/BprsMark";
 import PublicDataState from "@/app/components/PublicDataState";
 import SiteFooter from "@/app/components/SiteFooter";
 import SiteHeader from "@/app/components/SiteHeader";
+import { TextLink } from "@/app/components/ui";
+import styles from "../bprs.module.css";
 import { toAsset, toBprsProfile } from "@/app/data/catalog";
 import {
   getPublicInstitution,
@@ -27,7 +29,7 @@ export async function generateMetadata({ params }: BprsProfilePageProps): Promis
     const profile = await getPublicInstitution(slug);
     return {
       title: `${profile.public_name} | Seputar Jaminan by ruwang`,
-      description: `${profile.public_name} menerbitkan ${profile.published_asset_count} aset aktif pada Seputar Jaminan.`,
+      description: profile.short_description,
     };
   } catch {
     return { title: "Profil BPRS | Seputar Jaminan by ruwang" };
@@ -45,7 +47,9 @@ export default async function BprsProfilePage({ params }: BprsProfilePageProps) 
       <>
         <SiteHeader />
         <main className="bprs-profile-page site-frame page-data-state">
+          <TextLink href="/bprs">Kembali ke daftar BPRS</TextLink>
           <PublicDataState
+            headingLevel={1}
             kind={publicDataStateKind(error)}
             title={publicDataStateKind(error) === "timeout" ? "Profil BPRS memerlukan waktu lebih lama." : "Profil BPRS belum dapat dimuat."}
             message={publicDataStateKind(error) === "timeout" ? "Permintaan dihentikan setelah melewati batas waktu aman. Coba muat ulang halaman." : "Silakan coba kembali beberapa saat lagi."}
@@ -65,40 +69,31 @@ export default async function BprsProfilePage({ params }: BprsProfilePageProps) 
   return (
     <>
       <SiteHeader />
-      <main className="bprs-profile-page">
-        <header className="site-frame bprs-profile-masthead">
-          <Link className="back-link" href="/bprs">
+      <main className={styles.page}>
+        <div className={`site-frame ${styles.back}`}>
+          <Link className="ui-text-link" href="/bprs">
             <ArrowLeft aria-hidden="true" />
             <span>Kembali ke direktori</span>
           </Link>
-
-          <div className="bprs-profile-identity">
-            <div className="bprs-profile-mark-wrap">
+          <TextLink href="/katalog">Jelajahi katalog <ArrowUpRight aria-hidden="true" /></TextLink>
+        </div>
+        <header className={`site-frame ${styles.profileHeader}`}>
+            <div className={styles.profileLogo}>
               <BprsMark profile={profile} />
-              <span className="bprs-profile-mark-label">Logo penerbit</span>
             </div>
-            <div className="bprs-profile-heading">
-              <p className="page-folio">Profil penerbit</p>
+            <div className={styles.profileHeading}>
+              <p className={styles.eyebrow}>BPRS penerbit</p>
               <h1>{profile.name}</h1>
-              <p className="bprs-profile-location"><MapPin aria-hidden="true" /> {profile.city}, {profile.province}</p>
-              <p className="bprs-profile-description">{profile.description}</p>
+              <p className={styles.location}><MapPin aria-hidden="true" /> {profile.city}, {profile.province}</p>
+              <p className={styles.description}>{profile.description}</p>
+              {Number.isSafeInteger(profile.publishedAssetCount) && profile.publishedAssetCount >= 0 && <p className={styles.profileCount} aria-label={`${profile.publishedAssetCount} aset tersedia`}><strong>{profile.publishedAssetCount.toLocaleString("id-ID")}</strong> aset tersedia di katalog</p>}
             </div>
-            <div className="bprs-profile-stat" aria-label={`${profile.publishedAssetCount} aset aktif`}>
-              <strong>{String(profile.publishedAssetCount).padStart(2, "0")}</strong>
-              <span>aset aktif</span>
-            </div>
-          </div>
-
-          <p className="bprs-profile-source">Informasi publik ini dikelola oleh BPRS penerbit melalui ruwang.</p>
         </header>
 
-        <section className="site-frame bprs-published-assets" aria-labelledby="published-assets-title">
-          <div className="bprs-published-assets-head">
-            <div>
-              <p className="section-kicker">Katalog penerbit</p>
-              <h2 id="published-assets-title">Aset dari {profile.name}</h2>
-            </div>
-            <Link className="editorial-link" href={`/katalog?bprs=${profile.slug}`}>
+        <section className={`site-frame ${styles.assets}`} aria-labelledby="published-assets-title">
+          <div className={styles.assetsHead}>
+              <h2 id="published-assets-title">Aset dari BPRS ini</h2>
+            <Link className="ui-text-link" href={`/katalog?bprs=${profile.slug}`}>
               <span>Buka di katalog</span>
               <ArrowUpRight aria-hidden="true" />
             </Link>
@@ -112,30 +107,28 @@ export default async function BprsProfilePage({ params }: BprsProfilePageProps) 
               message="Profil tetap tersedia, tetapi daftar aset belum berhasil dimuat. Coba kembali beberapa saat lagi."
             />
           ) : profileAssets.length ? (
-            <div className={`bprs-profile-assets-grid bprs-profile-assets-grid--count-${Math.min(profileAssets.length, 3)}`}>
+            <div className={styles.assetsGrid} data-bprs-assets>
               {profileAssets.map((asset, index) => (
-                <AssetCard key={asset.slug} asset={asset} priority={index < 2} showPublisher={false} size={profileAssets.length === 1 ? "wide" : "standard"} />
+                <AssetCard key={asset.slug} asset={asset} priority={index < 2} />
               ))}
             </div>
           ) : (
-            <div className="bprs-profile-empty">
-              <Buildings aria-hidden="true" />
-              <div>
-                <p className="section-kicker">Katalog belum tersedia</p>
-                <h3>Belum ada aset aktif dari BPRS ini.</h3>
-                <p>Profil penerbit tetap dapat dilihat. Aset akan muncul setelah diterbitkan melalui ruwang.</p>
-                <Link href="/katalog">Jelajahi katalog lainnya <ArrowUpRight aria-hidden="true" /></Link>
-              </div>
-            </div>
+            <PublicDataState kind="empty" scene="profile" title="Belum ada aset tersedia dari BPRS ini." message="Anda dapat melihat aset dari BPRS lain atau kembali nanti.">
+                <TextLink href="/katalog">Jelajahi katalog lainnya <ArrowUpRight aria-hidden="true" /></TextLink>
+            </PublicDataState>
           )}
+          {assetsResult.ok && assetsResult.value.next_cursor && <div className={styles.pagination}>
+            <p>Menampilkan {profileAssets.length} aset terbaru. Masih ada aset lainnya.</p>
+            <Link className="ui-button ui-button-secondary" href={`/katalog?${new URLSearchParams({ bprs: profile.slug, cursor: assetsResult.value.next_cursor })}`}>Lihat aset berikutnya <ArrowUpRight aria-hidden="true" /></Link>
+          </div>}
         </section>
 
-        <aside className="site-frame bprs-profile-notice" aria-label="Catatan informasi">
-          <p>Harga, ketersediaan, dokumen, dan proses selanjutnya perlu dikonfirmasi langsung kepada BPRS penerbit pada setiap halaman aset.</p>
-          <Link href="/cara-minat">Pelajari cara menyampaikan minat <ArrowUpRight aria-hidden="true" /></Link>
+        <aside className={`site-frame ${styles.help}`} aria-label="Bantuan menghubungi BPRS">
+          <p>Pilih aset untuk membaca detail dan menghubungi kontak yang ditentukan BPRS.</p>
+          <TextLink href="/cara-minat">Cara menghubungi <ArrowUpRight aria-hidden="true" /></TextLink>
         </aside>
       </main>
-      <SiteFooter />
+      <SiteFooter compact />
     </>
   );
 }

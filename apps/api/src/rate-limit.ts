@@ -16,7 +16,9 @@ export class RedisFixedWindowRateLimiter implements RateLimiter {
       enableOfflineQueue: false,
       maxRetriesPerRequest: 1,
       lazyConnect: true,
+      connectTimeout: 1000,
     });
+    this.redis.on("error", () => undefined); // Request path reports a sanitized 503.
   }
 
   async consume(key: string, limit: number) {

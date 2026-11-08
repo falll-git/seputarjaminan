@@ -1,6 +1,6 @@
 export const PUBLIC_MOTION_DURATION = {
   fast: 0.18,
-  standard: 0.28,
+  standard: 0.24,
   slow: 0.4,
 } as const;
 

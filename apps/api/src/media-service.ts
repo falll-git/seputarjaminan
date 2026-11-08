@@ -27,6 +27,7 @@ export class MediaService {
 
   async createUploadSession(payload: any, authentication: {
     institutionId: string;
+    installationId: string;
   }, requestId: string) {
     const validation = validateSchema(UPLOAD_SCHEMA, payload);
     if (!validation.valid) {
@@ -41,6 +42,12 @@ export class MediaService {
     if (payload.institution_id !== authentication.institutionId) {
       throw new ApiError(403, "INSTITUTION_MISMATCH", "Identitas BPRS tidak sesuai koneksi.");
     }
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(authentication.installationId || "")) {
+      throw new ApiError(403, "INSTALLATION_REQUIRED", "Identitas instalasi tidak tersedia.");
+    }
+    if (payload.size_bytes > this.config.security.mediaFileMaxBytes) {
+      throw new ApiError(422, "MEDIA_TOO_LARGE", "Ukuran gambar melebihi batas upload.");
+    }
     const expiresIn = Math.min(payload.requested_ttl_seconds, this.config.uploadSessionTtlSeconds);
     const expiresAt = new Date(Date.now() + expiresIn * 1000);
     const plainToken = randomBytes(32).toString("base64url");
@@ -49,6 +56,9 @@ export class MediaService {
       this.databases.ingest,
       authentication.institutionId,
       async (transaction) => {
+        // Use the same object-first lock order as PUT and complete.
+        await transaction.$queryRaw`SELECT id FROM media_objects
+          WHERE institution_id=${authentication.institutionId}::uuid AND source_media_id=${payload.source_media_id}::uuid FOR UPDATE`;
         const existing = await transaction.mediaObject.findUnique({
           where: {
             institutionId_sourceMediaId: {
@@ -57,6 +67,9 @@ export class MediaService {
             },
           },
         });
+        if (existing?.originInstallationId && existing.originInstallationId !== authentication.installationId) {
+          throw new ApiError(409, "MEDIA_INSTALLATION_CONFLICT", "Gambar berasal dari instalasi berbeda.");
+        }
         if (
           existing
           && (
@@ -65,11 +78,13 @@ export class MediaService {
             || Number(existing.sizeBytes) !== payload.size_bytes
             || existing.sourcePublicationId !== payload.publication_id
             || existing.purpose !== payload.purpose
+            || existing.width !== payload.width
+            || existing.height !== payload.height
           )
         ) {
           throw new ApiError(409, "SOURCE_MEDIA_CONFLICT", "Identitas gambar sudah digunakan untuk file berbeda.");
         }
-        if (existing && ["READY", "PROCESSING", "REVOKED"].includes(existing.state)) {
+        if (existing && !["AWAITING_UPLOAD", "EXPIRED"].includes(existing.state)) {
           throw new ApiError(409, "MEDIA_STATE_CONFLICT", "Gambar sudah diproses atau tidak dapat diunggah ulang.");
         }
 
@@ -104,6 +119,7 @@ export class MediaService {
           data: {
             id: mediaId,
             institutionId: authentication.institutionId,
+            originInstallationId: authentication.installationId,
             sourceMediaId: payload.source_media_id,
             sourcePublicationId: payload.publication_id,
             logicalObjectKey,
@@ -117,6 +133,11 @@ export class MediaService {
             height: payload.height,
           },
         });
+        if (existing) {
+          // A renewed session invalidates every older token for this object.
+          await transaction.mediaUploadSession.updateMany({ where: { mediaObjectId: media.id }, data: { expiresAt: new Date(0) } });
+          await transaction.mediaObject.update({ where: { id: media.id }, data: { state: "AWAITING_UPLOAD" } });
+        }
         const session = await transaction.mediaUploadSession.create({
           data: {
             institutionId: authentication.institutionId,
@@ -181,46 +202,62 @@ export class MediaService {
     if (!Buffer.isBuffer(request.body)) {
       throw new ApiError(400, "MEDIA_BODY_REQUIRED", "File gambar belum dikirim.");
     }
-    const session = await withInstitution(this.databases.ingest, institutionId, (transaction) =>
-      transaction.mediaUploadSession.findFirst({
+    if (![sessionId, institutionId].every(value => /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(value))) {
+      throw new ApiError(404, "UPLOAD_SESSION_INVALID", "Sesi upload tidak tersedia.");
+    }
+    await withInstitution(this.databases.ingest, institutionId, async (transaction) => {
+      // Lock the object through storage write and token consume: a second PUT
+      // cannot overwrite bytes after complete/processing or reuse a token.
+      await transaction.$queryRaw`SELECT m.id FROM media_objects m
+        JOIN media_upload_sessions s ON s.media_object_id=m.id AND s.institution_id=m.institution_id
+        WHERE s.id=${sessionId}::uuid AND s.institution_id=${institutionId}::uuid
+        AND s.token_hash=${tokenHash(token)} FOR UPDATE OF m`;
+      const session = await transaction.mediaUploadSession.findFirst({
         where: {
           id: sessionId,
           institutionId,
           tokenHash: tokenHash(token),
         },
         include: { mediaObject: true },
-      }),
-    );
-    if (!session || session.expiresAt <= new Date() || session.consumedAt) {
-      throw new ApiError(404, "UPLOAD_SESSION_INVALID", "Sesi upload tidak tersedia atau sudah berakhir.");
-    }
-    if (request.get("Content-Type") !== session.expectedMime) {
-      throw new ApiError(415, "MEDIA_TYPE_MISMATCH", "Format gambar tidak sesuai sesi upload.");
-    }
-    await this.storage.putObject(session.mediaObject.logicalObjectKey, request.body, {
-      maxBytes: Number(session.maxBytes),
-      expectedSha256: session.expectedSha256,
-      contentType: session.expectedMime,
-    });
-    try {
-      await withInstitution(this.databases.ingest, institutionId, async (transaction) => {
-        await transaction.mediaUploadSession.update({
-          where: { id: session.id },
-          data: { consumedAt: new Date() },
-        });
-        await transaction.mediaObject.update({
-          where: { id: session.mediaObjectId },
-          data: { state: "UPLOADED" },
-        });
       });
-    } catch (error) {
-      await this.storage.deleteTemporaryObject(session.mediaObject.logicalObjectKey).catch(() => undefined);
-      throw error;
-    }
+      if (!session || session.expiresAt <= new Date() || session.consumedAt) {
+        throw new ApiError(404, "UPLOAD_SESSION_INVALID", "Sesi upload tidak tersedia atau sudah berakhir.");
+      }
+      if (session.mediaObject.state !== "AWAITING_UPLOAD") {
+        throw new ApiError(409, "MEDIA_STATE_CONFLICT", "Gambar tidak dapat diunggah pada status saat ini.");
+      }
+      if (request.get("Content-Type") !== session.expectedMime) {
+        throw new ApiError(415, "MEDIA_TYPE_MISMATCH", "Format gambar tidak sesuai sesi upload.");
+      }
+      try {
+        await this.storage.putObject(session.mediaObject.logicalObjectKey, request.body, {
+          maxBytes: Number(session.maxBytes),
+          expectedSha256: session.expectedSha256,
+          contentType: session.expectedMime,
+        });
+      } catch (error) {
+        const code = (error as { code?: string }).code;
+        if (code === "MEDIA_TOO_LARGE") throw new ApiError(413, code, "Ukuran gambar melebihi batas sesi upload.");
+        if (code === "MEDIA_CHECKSUM_MISMATCH") throw new ApiError(422, code, "Checksum gambar tidak sesuai sesi upload.");
+        throw new ApiError(503, "MEDIA_STORAGE_UNAVAILABLE", "Penyimpanan gambar belum tersedia. Coba kembali.", { retryable: true });
+      }
+      await transaction.mediaUploadSession.update({
+        where: { id: session.id },
+        data: { consumedAt: new Date() },
+      });
+      await transaction.mediaObject.update({
+        where: { id: session.mediaObjectId },
+        data: { state: "UPLOADED" },
+      });
+    });
   }
 
   async complete(sessionId: string, mediaId: string, institutionId: string, requestId: string) {
+    if (![sessionId, mediaId].every(value => /^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(value))) {
+      throw new ApiError(404, "UPLOAD_SESSION_INVALID", "Sesi upload tidak tersedia.");
+    }
     const result = await withInstitution(this.databases.ingest, institutionId, async (transaction) => {
+      await transaction.$queryRaw`SELECT id FROM media_objects WHERE id=${mediaId}::uuid AND institution_id=${institutionId}::uuid FOR UPDATE`;
       const session = await transaction.mediaUploadSession.findFirst({
         where: { id: sessionId, institutionId, mediaObjectId: mediaId },
         include: { mediaObject: true },
@@ -236,7 +273,7 @@ export class MediaService {
       } else if (!session.consumedAt) {
         throw new ApiError(409, "MEDIA_UPLOAD_INCOMPLETE", "Upload gambar belum selesai.");
       }
-      if (session.mediaObject.state === "READY") return session.mediaObject;
+      if (["READY", "PROCESSING"].includes(session.mediaObject.state)) return session.mediaObject;
       if (!["UPLOADED", "AWAITING_UPLOAD", "PROCESSING"].includes(session.mediaObject.state)) {
         throw new ApiError(409, "MEDIA_STATE_CONFLICT", "Gambar tidak dapat diproses pada status saat ini.");
       }
@@ -249,6 +286,7 @@ export class MediaService {
         create: {
           institutionId,
           jobType: "PROCESS_MEDIA",
+          originInstallationId: media.originInstallationId,
           dedupeKey: "media-process:" + mediaId,
           payload: { media_id: mediaId },
         },

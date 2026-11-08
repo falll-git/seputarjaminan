@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import pg from "pg";
+import { verifyDisposableDatabase } from "./disposable-target.js";
 
 const { Client } = pg;
 const ownerUrl = process.env.SJ_TEST_OWNER_DATABASE_URL;
@@ -28,6 +29,11 @@ test("RLS pusat memakai role NOBYPASSRLS dan mengisolasi tenant ingest", {
   const publicClient = new Client({ connectionString: publicUrl });
   const ops = new Client({ connectionString: opsUrl });
   await Promise.all([owner.connect(), registry.connect(), ingest.connect(), publicClient.connect(), ops.connect()]);
+  try {
+    await verifyDisposableDatabase(owner);
+    assert.equal((await owner.query("SELECT count(*)::int n FROM institutions WHERE id=ANY($1::uuid[])", [[institutionA, institutionB]])).rows[0].n, 0, "Existing fixtures are not owned by this run");
+  }
+  catch (error) { await Promise.all([owner.end(), registry.end(), ingest.end(), publicClient.end(), ops.end()]); throw error; }
   context.after(async () => {
     await owner.query("DELETE FROM institutions WHERE id = ANY($1::uuid[])", [[institutionA, institutionB]]);
     await Promise.all([owner.end(), registry.end(), ingest.end(), publicClient.end(), ops.end()]);
@@ -81,7 +87,7 @@ test("RLS pusat memakai role NOBYPASSRLS dan mengisolasi tenant ingest", {
   );
   await ingest.query("ROLLBACK");
 
-  const publicRows = await publicClient.query("SELECT id FROM institutions ORDER BY id");
+  const publicRows = await publicClient.query("SELECT id FROM institutions WHERE id=ANY($1::uuid[]) ORDER BY id", [[institutionA, institutionB]]);
   assert.deepEqual(publicRows.rows.map((row) => row.id), [institutionA]);
   const opsRows = await ops.query("SELECT id FROM institutions WHERE id = ANY($1::uuid[]) ORDER BY id", [
     [institutionA, institutionB],

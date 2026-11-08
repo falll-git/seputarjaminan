@@ -3,19 +3,20 @@
 import * as Dialog from "@radix-ui/react-dialog";
 import { ArrowUpRight, List, X } from "@phosphor-icons/react";
 import { usePathname } from "next/navigation";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import BrandLockup from "./BrandLockup";
+import ThemeControl from "./ThemeControl";
+import { Button, SearchInput, IconButton } from "./ui";
+import styles from "./HomeSearch.module.css";
+import { publicNavigation as nav } from "../lib/public-navigation";
 
-const nav = [
-  { href: "/katalog", label: "Katalog" },
-  { href: "/bprs", label: "BPRS penerbit" },
-  { href: "/cara-minat", label: "Cara minat" },
-];
 
 export default function SiteHeader() {
   const [open, setOpen] = useState(false);
   const [compact, setCompact] = useState(false);
   const pathname = usePathname();
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const closeRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     let frame = 0;
@@ -45,28 +46,31 @@ export default function SiteHeader() {
 
   return (
       <header className={`site-header${compact ? " is-compact" : ""}`} data-compact={compact ? "true" : "false"}>
-        <div className="site-frame header-inner">
+        <div className={`site-frame header-inner${pathname === "/" ? ` ${styles.inner}` : ""}`}>
           <BrandLockup />
+          {pathname === "/" && <form action="/katalog" role="search" className={`${styles.search} sj-search-bar`}>
+            <SearchInput label="Cari aset atau lokasi" hideLabel id="home-search" name="q" maxLength={100} placeholder="Cari aset atau lokasi…" />
+            <Button type="submit">Cari</Button>
+          </form>}
           <nav className="desktop-nav" aria-label="Navigasi utama">
             {nav.map((item) => <a href={item.href} aria-current={isActive(item.href) ? "page" : undefined} key={item.href}>{item.label}</a>)}
           </nav>
-          <a className="header-cta" href="/katalog">
-            <span>Jelajahi aset</span>
-            <ArrowUpRight aria-hidden="true" />
-          </a>
+          <div className="desktop-theme-control"><ThemeControl /></div>
           <Dialog.Root open={open} onOpenChange={setOpen}>
             <Dialog.Trigger asChild>
-              <button className="mobile-menu-trigger" type="button" aria-label="Buka navigasi" aria-expanded={open}>
+              <IconButton ref={triggerRef} className="mobile-menu-trigger" label="Buka navigasi" aria-expanded={open}>
                 <List aria-hidden="true" />
-              </button>
+              </IconButton>
             </Dialog.Trigger>
             <Dialog.Portal>
               <Dialog.Overlay className="mobile-navigation-overlay" />
-              <Dialog.Content className="mobile-navigation" aria-describedby="mobile-navigation-description">
+              <Dialog.Content className="mobile-navigation" aria-describedby="mobile-navigation-description"
+                onOpenAutoFocus={(event) => { event.preventDefault(); closeRef.current?.focus({ preventScroll: true }); }}
+                onCloseAutoFocus={(event) => { event.preventDefault(); triggerRef.current?.focus({ preventScroll: true }); }}>
                 <Dialog.Title className="sr-only">Navigasi utama</Dialog.Title>
                 <div className="mobile-navigation-head">
-                  <BrandLockup inverted />
-                  <Dialog.Close asChild><button type="button" aria-label="Tutup navigasi"><X aria-hidden="true" /></button></Dialog.Close>
+                  <BrandLockup />
+                  <Dialog.Close asChild><IconButton ref={closeRef} label="Tutup navigasi"><X aria-hidden="true" /></IconButton></Dialog.Close>
                 </div>
                 <nav aria-label="Navigasi utama">
                   {nav.map((item, index) => {
@@ -82,7 +86,10 @@ export default function SiteHeader() {
                     );
                   })}
                 </nav>
-                <Dialog.Description id="mobile-navigation-description">Katalog publik dari BPRS melalui ruwang.</Dialog.Description>
+                <div className="mobile-theme-control">
+                  <ThemeControl />
+                  <Dialog.Description id="mobile-navigation-description">Katalog publik dari BPRS melalui ruwang.</Dialog.Description>
+                </div>
               </Dialog.Content>
             </Dialog.Portal>
           </Dialog.Root>

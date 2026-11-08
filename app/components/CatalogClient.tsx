@@ -1,453 +1,172 @@
 "use client";
 
 import * as Dialog from "@radix-ui/react-dialog";
-import {
-  ArrowCounterClockwise,
-  ArrowRight,
-  CaretDown,
-  Check,
-  FadersHorizontal,
-  MagnifyingGlass,
-  X,
-} from "@phosphor-icons/react";
-import { AnimatePresence, LayoutGroup, motion, useReducedMotion } from "motion/react";
+import Link from "next/link";
+import { ArrowRight, Car, Factory, FadersHorizontal, House, MapTrifold, SquaresFour, X } from "@phosphor-icons/react";
+import { Radio, RadioGroup } from "react-aria-components";
+import { UNSAFE_PortalProvider } from "react-aria";
 import { usePathname, useRouter, useSearchParams } from "next/navigation";
-import { useMemo, useState } from "react";
+import { useLayoutEffect, useRef, useState, useTransition } from "react";
 import type { Asset, BprsProfile, Category } from "../data/catalog";
-import { pressFeedback, PUBLIC_MOTION_DURATION, PUBLIC_MOTION_EASE } from "../lib/public-motion";
-import AssetCard from "./AssetCard";
+import { Button, FilterChip, IconButton, SearchInput } from "./ui";
+import ControlSelect from "./ControlSelect";
 import CatalogCombobox, { type CatalogFilterOption } from "./CatalogCombobox";
+import AssetCard from "./AssetCard";
+import PublicDataState, { type PublicDataStateKind } from "./PublicDataState";
+import { restoreCatalogPosition, safeCatalogReturn } from "../lib/catalog-navigation";
+import styles from "../katalog/catalog.module.css";
+import { usePublisherOptions } from "../lib/use-publisher-options";
 
 type FilterKey = "q" | "category" | "bprs" | "province" | "sort";
-
-type CatalogClientProps = {
-  items: Asset[];
-  categories: Category[];
-  publishers: BprsProfile[];
-  provinces: string[];
-  nextCursor?: string | null;
+type Draft = { category: string; bprs: string; bprsInput: string; province: string };
+type Props = {
+  items: Asset[]; categories: Category[]; publishers: BprsProfile[]; provinces: string[];
+  nextCursor?: string | null; errorKind?: PublicDataStateKind;
+  publisherCursor?: string | null;
+  taxonomyUnavailable?: boolean; publishersUnavailable?: boolean;
+};
+type FilterFormProps = Pick<Props, "categories" | "publishers" | "provinces" | "taxonomyUnavailable" | "publishersUnavailable" | "publisherCursor"> & {
+  applied: Draft; onApply: (draft: Draft) => void; mode: "desktop" | "mobile"; pending: boolean;
 };
 
-type FilterValues = {
-  category: string;
-  bprs: string;
-  bprsInput: string;
-  province: string;
-  provinceKey: string | null;
-};
-
-type FilterPanelProps = {
-  mode: "desktop" | "mobile";
-  categories: Category[];
-  publisherOptions: CatalogFilterOption[];
-  provinceOptions: CatalogFilterOption[];
-  values: FilterValues;
-  activeFilters: number;
-  onCategoryChange: (value: string) => void;
-  onBprsInputChange: (value: string) => void;
-  onBprsChange: (value: string) => void;
-  onProvinceInputChange: (value: string) => void;
-  onProvinceChange: (value: string) => void;
-  onReset: () => void;
-};
-
-type CatalogSearchProps = {
-  query: string;
-  onSubmit: (value: string) => void;
-  onClear: () => void;
-};
-
-type DesktopFilterPanelProps = {
-  categories: Category[];
-  publisherOptions: CatalogFilterOption[];
-  provinceOptions: CatalogFilterOption[];
-  category: string;
-  bprs: string;
-  publisherName: string;
-  province: string;
-  provinceKey: string | null;
-  activeFilters: number;
-  onCategoryChange: (value: string) => void;
-  onBprsChange: (value: string) => void;
-  onProvinceChange: (value: string) => void;
-  onReset: () => void;
-};
-
-function FilterSelectionMark({ visible }: { visible: boolean }) {
-  const reducedMotion = useReducedMotion();
-
-  return (
-    <AnimatePresence initial={false}>
-      {visible ? (
-        <motion.span
-          className="filter-selection-mark"
-          initial={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.72 }}
-          animate={{ opacity: 1, scale: 1 }}
-          exit={reducedMotion ? { opacity: 0 } : { opacity: 0, scale: 0.82 }}
-          transition={{ duration: PUBLIC_MOTION_DURATION.fast, ease: PUBLIC_MOTION_EASE }}
-        >
-          <Check weight="bold" aria-hidden="true" />
-        </motion.span>
-      ) : null}
-    </AnimatePresence>
-  );
-}
-
-function FilterPanel({
-  mode,
-  categories,
-  publisherOptions,
-  provinceOptions,
-  values,
-  activeFilters,
-  onCategoryChange,
-  onBprsInputChange,
-  onBprsChange,
-  onProvinceInputChange,
-  onProvinceChange,
-  onReset,
-}: FilterPanelProps) {
-  const reducedMotion = useReducedMotion();
-
-  function selectPublisher(key: string) {
-    const option = publisherOptions.find((item) => item.id === key);
-    onBprsInputChange(key === "all" ? "" : option?.label ?? "");
-    onBprsChange(key);
-  }
-
-  function selectProvince(key: string) {
-    const option = provinceOptions.find((item) => item.id === key);
-    const next = key === "all" ? "" : option?.label ?? "";
-    onProvinceInputChange(next);
-    onProvinceChange(next);
-  }
-
-  return (
-    <div className="catalog-filter-groups" data-mode={mode}>
-      <fieldset className="filter-group category-filter">
-        <legend>Kategori</legend>
-        <motion.button className={values.category === "all" ? "is-active" : ""} onClick={() => onCategoryChange("all")} type="button" layout="position" {...pressFeedback(reducedMotion)}>
-          <span>00</span><strong>Semua aset</strong><FilterSelectionMark visible={values.category === "all"} />
-        </motion.button>
-        {categories.map((item) => (
-          <motion.button className={values.category === item.slug ? "is-active" : ""} onClick={() => onCategoryChange(item.slug)} type="button" key={item.slug} layout="position" {...pressFeedback(reducedMotion)}>
-            <span>{item.index}</span><strong>{item.label}</strong><FilterSelectionMark visible={values.category === item.slug} />
-          </motion.button>
-        ))}
-      </fieldset>
-
-      <CatalogCombobox
-        label="BPRS penerbit"
-        placeholder="Cari nama BPRS"
-        emptyMessage="BPRS tidak ditemukan."
-        options={publisherOptions}
-        selectedKey={values.bprs}
-        inputValue={values.bprsInput}
-        onInputChange={onBprsInputChange}
-        onSelectionChange={selectPublisher}
-      />
-
-      <div className="catalog-province-filter">
-        <CatalogCombobox
-          label="Provinsi aset"
-          placeholder="Cari atau ketik provinsi"
-          emptyMessage="Provinsi tidak ditemukan."
-          options={provinceOptions}
-          selectedKey={values.provinceKey}
-          inputValue={values.province}
-          onInputChange={onProvinceInputChange}
-          onSelectionChange={selectProvince}
-        />
+/** Both layouts use the same draft/commit semantics. Typing never changes applied filters. */
+function FilterForm({ categories, publishers, publisherCursor, provinces, taxonomyUnavailable, publishersUnavailable, applied, onApply, mode, pending }: FilterFormProps) {
+  const [draft, setDraft] = useState(applied);
+  const [selectedPublisher, setSelectedPublisher] = useState<CatalogFilterOption | undefined>(() => {
+    const publisher = publishers.find(p => p.slug === applied.bprs);
+    return publisher ? {id:publisher.slug,label:publisher.name,supporting:[publisher.city,publisher.province].filter(Boolean).join(", "),markUrl:publisher.markUrl} : undefined;
+  });
+  const options = usePublisherOptions(publishers, publisherCursor, publishersUnavailable);
+  const categoryIcons = { tanah: MapTrifold, bangunan: House, "mesin-peralatan": Factory, kendaraan: Car };
+  const publisherOptions: CatalogFilterOption[] = [
+    { id: "all", label: "Semua BPRS" },
+    ...options.items.map(p => ({id:p.slug, label:p.name, supporting:[p.city,p.province].filter(Boolean).join(", "), markUrl:p.markUrl})),
+  ];
+  // Preserve a real selected identity when another async search replaces the option page.
+  if (selectedPublisher && !publisherOptions.some(p=>p.id===selectedPublisher.id)) publisherOptions.push(selectedPublisher);
+  const validPublisher = draft.bprsInput === "" || publisherOptions.some(p=>p.id===draft.bprs && p.label===draft.bprsInput);
+  const changed = draft.category !== applied.category || draft.bprs !== applied.bprs || draft.province.trim() !== applied.province;
+  function reset() { setDraft({category:"all",bprs:"all",bprsInput:"",province:""}); options.search(""); }
+  return <form className={styles.filterForm} data-mode={mode} onSubmit={event=>{event.preventDefault(); if(validPublisher) onApply(draft);}}>
+    <div className={styles.filterFields}>
+      <RadioGroup className={styles.categoryPicker} aria-label="Jenis aset" value={draft.category} onChange={category=>setDraft({...draft,category})}>
+        <span className={styles.fieldLabel}>Jenis aset</span>
+        <div className={styles.categoryOptions}>
+          <Radio value="all" className={styles.categoryAll}><SquaresFour aria-hidden="true"/><span>Semua jenis aset</span></Radio>
+          {categories.map(c=>{const Icon=categoryIcons[c.slug] ?? SquaresFour; return <Radio key={c.slug} value={c.slug} className={styles.categoryOption}><Icon aria-hidden="true"/><span>{c.label}</span></Radio>;})}
+        </div>
+        {draft.category !== "all" && !categories.some(c=>c.slug===draft.category) && <Radio value={draft.category} className={styles.categoryAll}>{draft.category}</Radio>}
+      </RadioGroup>
+      {taxonomyUnavailable && <p className={styles.filterHint}>Pilihan jenis aset belum dapat dimuat.</p>}
+      <div className={styles.pickerRow}>
+      <CatalogCombobox label="Provinsi aset" placeholder="Cari provinsi" emptyMessage="Tidak ada saran. Anda tetap dapat memakai provinsi yang diketik." allowsCustomValue
+        description="Saran dari aset pada halaman ini. Provinsi lain bisa diketik."
+        options={provinces.map(p=>({id:p,label:p}))} selectedKey={provinces.includes(draft.province)?draft.province:null} inputValue={draft.province}
+        onClear={()=>setDraft(current=>({...current,province:""}))}
+        onInputChange={province=>setDraft(current=>({...current,province}))} onSelectionChange={province=>setDraft(current=>({...current,province}))}/>
+      <CatalogCombobox label="BPRS penerbit" placeholder="Cari nama BPRS" emptyMessage={options.loading ? "Mencari BPRS…" : options.error ? "Pilihan BPRS gagal dimuat." : "BPRS tidak ditemukan."}
+        options={publisherOptions} selectedKey={draft.bprs === "all" ? null : draft.bprs || null} inputValue={draft.bprsInput}
+        description="Cari nama atau lokasi BPRS. Pilih dari hasil pencarian."
+        loading={options.loading} failed={Boolean(options.error)} status={options.loading ? "Mencari BPRS…" : options.error ? "Pilihan BPRS gagal dimuat. Filter lain tetap dapat dipakai." : undefined}
+        onLoadMore={options.cursor || options.error ? options.loadMore : undefined}
+        moreLabel={options.error ? "Coba muat pilihan BPRS" : "Muat pilihan BPRS berikutnya"}
+        onClear={()=>{setDraft(current=>({...current,bprs:"all",bprsInput:""})); options.search("");}}
+        onInputChange={value=>{setDraft(current=>({...current,bprsInput:value,...(!value ? {bprs:"all"} : {})})); if(value !== publisherOptions.find(p=>p.id===draft.bprs)?.label) options.search(value);}}
+        onSelectionChange={key=>{const selected=publisherOptions.find(p=>p.id===key); setSelectedPublisher(selected); setDraft(current=>({...current,bprs:key,bprsInput:key==="all"?"":selected?.label ?? ""}));}}/>
       </div>
-
-      {mode === "desktop" && activeFilters > 0 ? (
-        <motion.button className="filter-reset" type="button" onClick={onReset} {...pressFeedback(reducedMotion)}>
-          <ArrowCounterClockwise aria-hidden="true" />Atur ulang filter
-        </motion.button>
-      ) : null}
+      {!validPublisher && <p role="status" className={styles.filterHint}>Pilih BPRS dari daftar atau kosongkan kolom.</p>}
+      <p role="status" className={styles.filterHint} data-changed={changed || undefined}>{changed ? "Pilihan belum diterapkan. Tekan Tampilkan hasil." : "Pilih filter, lalu tekan Tampilkan hasil."}</p>
     </div>
-  );
+    <div className={styles.filterActions}>
+      <Button variant="secondary" onClick={reset} disabled={pending}>Atur ulang</Button>
+      <Button type="submit" disabled={!validPublisher || pending}>Tampilkan hasil</Button>
+    </div>
+  </form>;
 }
 
-function CatalogSearch({ query, onSubmit, onClear }: CatalogSearchProps) {
-  const reducedMotion = useReducedMotion();
-  const [value, setValue] = useState(query);
-
-  function submit(event: React.FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    onSubmit(value.trim());
-  }
-
-  return (
-    <form className="catalog-search" role="search" onSubmit={submit}>
-      <MagnifyingGlass aria-hidden="true" />
-      <label className="sr-only" htmlFor="catalog-search-input">Cari aset</label>
-      <input
-        id="catalog-search-input"
-        type="text"
-        value={value}
-        onChange={(event) => setValue(event.target.value)}
-        placeholder="Cari rumah, tanah, kendaraan, atau lokasi"
-        autoComplete="off"
-      />
-      {value ? <motion.button className="catalog-search-clear" type="button" onClick={onClear} aria-label="Hapus pencarian" {...pressFeedback(reducedMotion)}><X aria-hidden="true" /></motion.button> : null}
-      <motion.button className="catalog-search-submit" type="submit" {...pressFeedback(reducedMotion)}>Cari aset <ArrowRight aria-hidden="true" /></motion.button>
-    </form>
-  );
+function CatalogSearch({ query, onSubmit, pending }: { query:string; onSubmit:(value:string)=>void; pending:boolean }) {
+  const [value,setValue]=useState(query);
+  return <form className={`${styles.search} sj-search-bar`} role="search" onSubmit={e=>{e.preventDefault();onSubmit(value.trim());}}>
+    <SearchInput label="Cari aset" clearLabel="Hapus pencarian" hideLabel value={value} maxLength={100} disabled={pending} onChange={e=>setValue(e.target.value)} onClear={()=>{setValue("");onSubmit("");}} placeholder="Cari aset atau lokasi" />
+    <Button type="submit" disabled={pending}>Cari aset<ArrowRight aria-hidden="true"/></Button>
+  </form>;
 }
 
-function DesktopFilterPanel({
-  categories,
-  publisherOptions,
-  provinceOptions,
-  category,
-  bprs,
-  publisherName,
-  province,
-  provinceKey,
-  activeFilters,
-  onCategoryChange,
-  onBprsChange,
-  onProvinceChange,
-  onReset,
-}: DesktopFilterPanelProps) {
-  const [bprsInput, setBprsInput] = useState(publisherName);
-  const [provinceInput, setProvinceInput] = useState(province);
-
-  return (
-    <FilterPanel
-      mode="desktop"
-      categories={categories}
-      publisherOptions={publisherOptions}
-      provinceOptions={provinceOptions}
-      values={{ category, bprs, bprsInput, province: provinceInput, provinceKey }}
-      activeFilters={activeFilters}
-      onCategoryChange={onCategoryChange}
-      onBprsInputChange={setBprsInput}
-      onBprsChange={onBprsChange}
-      onProvinceInputChange={setProvinceInput}
-      onProvinceChange={onProvinceChange}
-      onReset={onReset}
-    />
-  );
-}
-
-export default function CatalogClient({ items, categories, publishers, provinces, nextCursor }: CatalogClientProps) {
-  const params = useSearchParams();
-  const pathname = usePathname();
-  const router = useRouter();
-  const reducedMotion = useReducedMotion();
-  const q = params.get("q") ?? "";
-  const category = params.get("category") ?? "all";
-  const bprs = params.get("bprs") ?? "all";
-  const province = params.get("province") ?? "";
-  const sort = params.get("sort") ?? "terbaru";
-  const publisherName = publishers.find((publisher) => publisher.slug === bprs)?.name ?? "";
-  const [filterOpen, setFilterOpen] = useState(false);
-  const initialProvinceKey = province
-    ? (provinces.includes(province) ? province : null)
-    : "all";
-  const [mobileDraft, setMobileDraft] = useState<FilterValues>({ category, bprs, bprsInput: publisherName, province, provinceKey: initialProvinceKey });
-
-  const publisherOptions = useMemo<CatalogFilterOption[]>(() => [
-    { id: "all", label: "Semua penerbit", supporting: "Seluruh BPRS terhubung" },
-    ...publishers.map((publisher) => ({
-      id: publisher.slug,
-      label: publisher.name,
-      supporting: `${publisher.city}, ${publisher.province} · ${publisher.publishedAssetCount} aset`,
-      markUrl: publisher.markUrl,
-    })),
-  ], [publishers]);
-
-  const provinceOptions = useMemo<CatalogFilterOption[]>(() => [
-    { id: "all", label: "Semua provinsi" },
-    ...provinces.map((item) => ({ id: item, label: item })),
-  ], [provinces]);
-
-  function routeWith(changes: Partial<Record<FilterKey, string>>, cursor?: string | null) {
-    const next = new URLSearchParams(params.toString());
-    next.delete("cursor");
-    Object.entries(changes).forEach(([key, value]) => {
-      if (!value || value === "all" || (key === "sort" && value === "terbaru")) next.delete(key);
-      else next.set(key, value);
-    });
-    if (cursor) next.set("cursor", cursor);
-    return `${pathname}${next.size ? `?${next}` : ""}`;
+export default function CatalogClient({items,categories,publishers,publisherCursor,provinces,nextCursor,errorKind,taxonomyUnavailable,publishersUnavailable}: Props) {
+  const params=useSearchParams(), pathname=usePathname(), router=useRouter();
+  const [pending,startTransition]=useTransition();
+  const [filterOpen,setFilterOpen]=useState(false);
+  const filterPanelRef=useRef<HTMLDivElement>(null);
+  const q=(params.get("q") ?? "").slice(0,100);
+  const category=params.get("category") ?? "all", bprs=params.get("bprs") ?? "all";
+  const province=(params.get("province") ?? "").slice(0,100), sort=params.get("sort")==="terlama" ? "terlama" : "terbaru";
+  const publisherName=publishers.find(p=>p.slug===bprs)?.name ?? (bprs==="all" ? "" : bprs);
+  const applied:Draft={category,bprs,bprsInput:publisherName,province};
+  const catalogUrl=safeCatalogReturn(`${pathname}?${params}`);
+  useLayoutEffect(()=>{restoreCatalogPosition(catalogUrl);},[catalogUrl,items]);
+  function routeWith(changes:Partial<Record<FilterKey,string>>,cursor?:string|null) {
+    const next=new URLSearchParams(params.toString()); next.delete("cursor");
+    for(const [key,value] of Object.entries(changes)) {
+      if(!value||value==="all"||(key==="sort"&&value==="terbaru")) next.delete(key); else next.set(key,value);
+    }
+    if(cursor) next.set("cursor",cursor);
+    return safeCatalogReturn(`${pathname}?${next}`);
   }
-
-  function update(key: FilterKey, value: string) {
-    router.push(routeWith({ [key]: value }), { scroll: false });
+  function navigate(url:string) { startTransition(()=>router.push(url,{scroll:false})); }
+  function apply(draft:Draft) {
+    navigate(routeWith({category:draft.category,bprs:draft.bprs,province:draft.province.trim()})); setFilterOpen(false);
   }
-
-  function submitSearch(value: string) {
-    router.push(routeWith({ q: value }), { scroll: false });
-  }
-
-  function clearSearch() {
-    router.push(routeWith({ q: "" }), { scroll: false });
-  }
-
-  function resetAll() {
-    router.push(pathname, { scroll: false });
-  }
-
-  function resetFilters() {
-    router.push(routeWith({ category: "all", bprs: "all", province: "" }), { scroll: false });
-  }
-
-  function handleFilterOpen(open: boolean) {
-    if (open) setMobileDraft({ category, bprs, bprsInput: publisherName, province, provinceKey: initialProvinceKey });
-    setFilterOpen(open);
-  }
-
-  function applyMobileFilters() {
-    router.push(routeWith({
-      category: mobileDraft.category,
-      bprs: mobileDraft.bprs,
-      province: mobileDraft.province.trim(),
-    }), { scroll: false });
-    setFilterOpen(false);
-  }
-
-  function resetMobileFilters() {
-    setMobileDraft({ category: "all", bprs: "all", bprsInput: "", province: "", provinceKey: "all" });
-  }
-
-  const activeFilters = [category !== "all", bprs !== "all", Boolean(province)].filter(Boolean).length;
-  const hasSearchCriteria = Boolean(q.trim()) || activeFilters > 0 || Boolean(params.get("cursor"));
-  const mobileActiveFilters = [mobileDraft.category !== "all", mobileDraft.bprs !== "all", Boolean(mobileDraft.province)].filter(Boolean).length;
-  const draftMatchesApplied = mobileDraft.category === category
-    && mobileDraft.bprs === bprs
-    && mobileDraft.province.trim() === province;
-  return (
-    <section className="catalog-shell site-frame">
-      <div className="catalog-toolbar">
-        <CatalogSearch key={q} query={q} onSubmit={submitSearch} onClear={clearSearch} />
-
-        <div className="catalog-toolbar-actions">
-          <label className="catalog-sort">
-            <span>Urutkan</span>
-            <select value={sort} onChange={(event) => update("sort", event.target.value)} aria-label="Urutkan katalog">
-              <option value="terbaru">Terbaru</option>
-              <option value="terlama">Terlama</option>
-            </select>
-            <CaretDown aria-hidden="true" />
-          </label>
-
-          <Dialog.Root open={filterOpen} onOpenChange={handleFilterOpen}>
-            <Dialog.Trigger asChild>
-              <motion.button className="mobile-filter-trigger" type="button" {...pressFeedback(reducedMotion)}>
-                <FadersHorizontal weight={activeFilters ? "bold" : "regular"} aria-hidden="true" />
-                <span>Filter{activeFilters ? ` · ${activeFilters}` : ""}</span>
-              </motion.button>
-            </Dialog.Trigger>
-            <AnimatePresence>
-              {filterOpen ? (
-                <Dialog.Portal forceMount>
-                  <Dialog.Overlay asChild forceMount>
-                    <motion.div
-                      className="filter-sheet-overlay"
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      exit={{ opacity: 0 }}
-                      transition={{ duration: PUBLIC_MOTION_DURATION.fast }}
-                    />
-                  </Dialog.Overlay>
-                  <Dialog.Content asChild forceMount aria-describedby={undefined}>
-                    <motion.div
-                      className="filter-sheet"
-                      initial={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 32 }}
-                      animate={reducedMotion ? { opacity: 1 } : { opacity: 1, y: 0 }}
-                      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: 20 }}
-                      transition={{ duration: PUBLIC_MOTION_DURATION.standard, ease: PUBLIC_MOTION_EASE }}
-                    >
-                      <div className="filter-sheet-head">
-                        <div><span>Atur pencarian</span><Dialog.Title>Filter katalog</Dialog.Title></div>
-                        <Dialog.Close asChild><motion.button type="button" aria-label="Tutup filter" {...pressFeedback(reducedMotion)}><X aria-hidden="true" /></motion.button></Dialog.Close>
-                      </div>
-                      <div className="filter-sheet-body">
-                        <FilterPanel
-                          mode="mobile"
-                          categories={categories}
-                          publisherOptions={publisherOptions}
-                          provinceOptions={provinceOptions}
-                          values={mobileDraft}
-                          activeFilters={mobileActiveFilters}
-                          onCategoryChange={(value) => setMobileDraft((current) => ({ ...current, category: value }))}
-                          onBprsInputChange={(value) => setMobileDraft((current) => ({ ...current, bprsInput: value }))}
-                          onBprsChange={(value) => setMobileDraft((current) => ({ ...current, bprs: value }))}
-                          onProvinceInputChange={(value) => setMobileDraft((current) => ({ ...current, province: value }))}
-                          onProvinceChange={(value) => setMobileDraft((current) => ({ ...current, province: value, provinceKey: value || "all" }))}
-                          onReset={resetMobileFilters}
-                        />
-                      </div>
-                      <div className="filter-sheet-footer">
-                        <motion.button type="button" onClick={resetMobileFilters} {...pressFeedback(reducedMotion)}><ArrowCounterClockwise aria-hidden="true" />Atur ulang</motion.button>
-                        <motion.button className="filter-sheet-apply" type="button" onClick={applyMobileFilters} {...pressFeedback(reducedMotion)}>
-                          {draftMatchesApplied ? `Tampilkan ${items.length} aset` : "Tampilkan hasil"}<ArrowRight aria-hidden="true" />
-                        </motion.button>
-                      </div>
-                    </motion.div>
-                  </Dialog.Content>
-                </Dialog.Portal>
-              ) : null}
-            </AnimatePresence>
-          </Dialog.Root>
-        </div>
+  const filterProps={categories,publishers,publisherCursor,provinces,applied,onApply:apply,pending,taxonomyUnavailable,publishersUnavailable};
+  const chips: {key:FilterKey;label:string}[]=[
+    ...(q ? [{key:"q" as const,label:`Pencarian: ${q}`}] : []),
+    ...(category!=="all" ? [{key:"category" as const,label:`Jenis: ${categories.find(c=>c.slug===category)?.label ?? category}`}] : []),
+    ...(province ? [{key:"province" as const,label:`Provinsi: ${province}`}] : []),
+    ...(bprs!=="all" ? [{key:"bprs" as const,label:`BPRS: ${publisherName}`}] : []),
+  ];
+  const activeFilters=chips.filter(c=>c.key!=="q").length;
+  const hasCriteria=chips.length>0;
+  return <section className={`site-frame ${styles.shell}`} aria-label="Pencarian dan hasil katalog" aria-busy={pending}>
+    <div className={styles.toolbar}>
+      <CatalogSearch key={q} query={q} onSubmit={value=>navigate(routeWith({q:value}))} pending={pending}/>
+      <div className={styles.toolbarActions}>
+        <Dialog.Root open={filterOpen} onOpenChange={setFilterOpen}>
+          <Dialog.Trigger asChild><Button className={styles.mobileTrigger} variant="secondary"><FadersHorizontal aria-hidden="true"/>Filter{activeFilters ? ` · ${activeFilters}` : ""}</Button></Dialog.Trigger>
+          <Dialog.Portal>
+            <Dialog.Overlay className={styles.overlay}/>
+            <Dialog.Content ref={filterPanelRef} className={styles.sheet} aria-describedby="catalog-filter-help" onEscapeKeyDown={event=>{
+              // A nested picker owns the first Escape; the next closes the filter sheet.
+              if (filterPanelRef.current?.querySelector('[role="listbox"]')) event.preventDefault();
+            }}>
+              <div className={styles.sheetHead}><Dialog.Title>Filter katalog</Dialog.Title><Dialog.Close asChild><IconButton label="Tutup filter"><X aria-hidden="true"/></IconButton></Dialog.Close></div>
+              <Dialog.Description id="catalog-filter-help" className={styles.sheetDescription}>Atur ulang hanya mengubah pilihan sementara. Tutup panel untuk membatalkan.</Dialog.Description>
+              <UNSAFE_PortalProvider getContainer={()=>filterPanelRef.current}>
+                <FilterForm {...filterProps} mode="mobile"/>
+              </UNSAFE_PortalProvider>
+            </Dialog.Content>
+          </Dialog.Portal>
+        </Dialog.Root>
+        <ControlSelect label="Urutkan" value={sort} disabled={pending} onChange={sort=>navigate(routeWith({sort}))} options={[{id:"terbaru",label:"Terbaru"},{id:"terlama",label:"Terlama"}]}/>
       </div>
-
-      <div className="catalog-body">
-        <aside className="catalog-filter-rail" aria-label="Filter katalog">
-          <DesktopFilterPanel
-            key={`${bprs}\u0000${province}`}
-            categories={categories}
-            publisherOptions={publisherOptions}
-            provinceOptions={provinceOptions}
-            category={category}
-            bprs={bprs}
-            publisherName={publisherName}
-            province={province}
-            provinceKey={initialProvinceKey}
-            activeFilters={activeFilters}
-            onCategoryChange={(value) => update("category", value)}
-            onBprsChange={(value) => update("bprs", value)}
-            onProvinceChange={(value) => update("province", value)}
-            onReset={resetFilters}
-          />
-        </aside>
-
-        <div className="catalog-results">
-          {items.length ? (
-            <>
-              <LayoutGroup id="catalog-results">
-                <motion.div
-                  className="catalog-grid"
-                  layout={reducedMotion ? false : true}
-                  transition={{ duration: PUBLIC_MOTION_DURATION.standard, ease: PUBLIC_MOTION_EASE }}
-                >
-                  {items.map((asset, index) => <AssetCard asset={asset} size={index % 5 === 0 ? "wide" : "standard"} key={asset.id} />)}
-                </motion.div>
-              </LayoutGroup>
-              {nextCursor ? (
-                <motion.a className="catalog-next-page" href={routeWith({}, nextCursor)} {...pressFeedback(reducedMotion)}>
-                  <span>Lihat aset berikutnya</span>
-                  <ArrowRight aria-hidden="true" />
-                </motion.a>
-              ) : null}
-            </>
-          ) : (
-            <div className={`catalog-empty ${hasSearchCriteria ? "catalog-empty--search" : "catalog-empty--initial"}`}>
-              <span aria-hidden="true">00</span>
-              <div>
-                <p>{hasSearchCriteria ? "Pencarian selesai" : "Katalog belum tersedia"}</p>
-                <h2>{hasSearchCriteria ? "Tidak ada hasil pencarian." : "Belum ada aset yang diterbitkan."}</h2>
-                <p>{hasSearchCriteria ? "Coba gunakan kata yang lebih umum atau kurangi filter yang digunakan." : "Aset akan tampil setelah BPRS menyelesaikan pemeriksaan dan menerbitkan publikasinya melalui ruwang."}</p>
-              </div>
-              {hasSearchCriteria ? <motion.button type="button" onClick={resetAll} {...pressFeedback(reducedMotion)}>Atur ulang pencarian</motion.button> : null}
-            </div>
-          )}
-        </div>
+    </div>
+    <aside className={styles.rail} aria-label="Filter katalog"><FilterForm key={catalogUrl} {...filterProps} mode="desktop"/></aside>
+    {chips.length>0 && <div className={styles.chips} aria-label="Filter aktif">
+      {chips.map(chip=><FilterChip key={chip.key} active disabled={pending} aria-label={`Hapus ${chip.label}`} onClick={()=>navigate(routeWith({[chip.key]:""}))}>{chip.label}<X aria-hidden="true"/></FilterChip>)}
+      <Button variant="text" disabled={pending} onClick={()=>navigate("/katalog")}>Hapus semua</Button>
+    </div>}
+    <div className={styles.body}>
+      <div className={styles.results}>
+        <p className={styles.count} role="status">{pending ? "Memuat hasil…" : errorKind ? "Jumlah aset belum tersedia." : `${items.length} aset ditampilkan pada halaman ini`}</p>
+        {errorKind ? <><PublicDataState compact kind={errorKind} title={errorKind==="invalid-query" ? "Pencarian atau halaman tidak valid." : errorKind==="timeout"?"Katalog memerlukan waktu lebih lama.":"Katalog belum dapat dimuat."} message={errorKind==="invalid-query" ? "Atur ulang pencarian. Tautan halaman mungkin tidak sesuai dengan filter aktif." : "Coba muat ulang. Pencarian dan filter Anda tetap tersimpan."}/>{errorKind==="invalid-query" && <Button variant="secondary" onClick={()=>navigate("/katalog")}>Atur ulang pencarian</Button>}</> : items.length>0 ? <>
+          <div className={styles.grid}>{items.map(asset=><AssetCard asset={asset} catalogReturn={catalogUrl} key={asset.id}/>)}</div>
+          {nextCursor && <Link className={styles.next} href={routeWith({},nextCursor)} prefetch={false}>Lihat aset berikutnya<ArrowRight aria-hidden="true"/></Link>}
+          {params.get("cursor") && <Link className={styles.next} href={routeWith({})} prefetch={false}>Kembali ke halaman pertama</Link>}
+        </> : <PublicDataState kind={hasCriteria ? "no-results" : "empty"}
+          title={params.get("cursor") ? "Halaman ini tidak berisi aset." : hasCriteria ? "Tidak ada hasil pencarian." : "Belum ada aset yang diterbitkan."}
+          message={hasCriteria ? "Coba kata yang lebih umum atau hapus sebagian filter." : "Silakan kembali lagi untuk melihat aset yang tersedia."}>
+          {hasCriteria && <Button variant="secondary" onClick={()=>navigate("/katalog")}>Atur ulang pencarian</Button>}
+          {params.get("cursor") && <Link className={styles.next} href={routeWith({})} prefetch={false}>Kembali ke halaman pertama</Link>}
+        </PublicDataState>}
       </div>
-    </section>
-  );
+    </div>
+  </section>;
 }

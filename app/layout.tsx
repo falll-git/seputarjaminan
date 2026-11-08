@@ -1,16 +1,20 @@
 import type { Metadata } from "next";
 import { headers } from "next/headers";
-import "@fontsource-variable/schibsted-grotesk";
-import "@fontsource-variable/ibm-plex-sans";
-import "@fontsource/ibm-plex-mono/400.css";
 import "photoswipe/style.css";
+import "./design-tokens.css";
 import "./globals.css";
 import "./editorial.css";
 import "./routes.css";
 import "./design-system.css";
 import "./system-states.css";
+import "./marketplace.css";
+import "./foundation.css";
+import "./shared-components.css";
 import ConnectivityNotice from "./components/ConnectivityNotice";
 import PublicMotionProvider from "./components/PublicMotionProvider";
+import ThemeProvider from "./components/ThemeProvider";
+import { fontVariables } from "./fonts";
+import { THEME_BOOTSTRAP } from "./lib/theme";
 
 export async function generateMetadata(): Promise<Metadata> {
   const headerList = await headers();
@@ -39,12 +43,16 @@ export async function generateMetadata(): Promise<Metadata> {
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="id">
+    // Next 16 needs this opt-in to suspend global smooth scrolling during route changes.
+    <html lang="id" className={fontVariables} data-scroll-behavior="smooth" suppressHydrationWarning>
+      <head><script id="sj-theme-bootstrap" dangerouslySetInnerHTML={{ __html: THEME_BOOTSTRAP }} /></head>
       <body>
-        <PublicMotionProvider>
-          {children}
-          <ConnectivityNotice />
-        </PublicMotionProvider>
+        <ThemeProvider>
+          <PublicMotionProvider>
+            {children}
+            <ConnectivityNotice />
+          </PublicMotionProvider>
+        </ThemeProvider>
       </body>
     </html>
   );

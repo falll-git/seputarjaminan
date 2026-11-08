@@ -1,0 +1,25 @@
+{
+  "name": "@ruwang/braces-depth-guard",
+  "version": "3.0.3-ruwang.depth.1",
+  "private": true,
+  "description": "Local MIT-licensed braces 3.0.3 fork with pinned upstream depth-limit PR, not an official release",
+  "main": "index.js",
+  "license": "MIT",
+  "engines": {
+    "node": ">=22.12"
+  },
+  "dependencies": {
+    "fill-range": "7.1.1"
+  },
+  "upstream": {
+    "repository": "https://github.com/micromatch/braces",
+    "pullRequest": "https://github.com/micromatch/braces/pull/72",
+    "sourceCommit": "28d440b5dd449dbf1fe6f3506cf94ecca4d02660",
+    "advisory": "GHSA-vfj7-8cjw-p6xm"
+  },
+  "files": [
+    "index.js",
+    "lib",
+    "LICENSE"
+  ]
+}

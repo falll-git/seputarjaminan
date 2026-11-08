@@ -1,0 +1,11 @@
+.state { display: grid; grid-template-columns: minmax(140px, 240px) minmax(0, 1fr); align-items: center; gap: var(--space-6); padding: var(--space-8) 0; border-block: 1px solid var(--color-divider); color: var(--color-text); }
+.copy { min-width: 0; max-width: 640px; }
+.label { margin: 0 0 var(--space-2); color: var(--color-link); font: 600 var(--type-meta)/1.5 var(--font-body); }
+.copy h1, .copy h2 { margin: 0; font: var(--font-weight-semibold) clamp(1.4rem, 2.4vw, 2rem)/1.25 var(--font-heading); letter-spacing: -.03em; overflow-wrap: anywhere; }
+.message { margin: var(--space-3) 0 0; color: var(--color-text-supporting); line-height: 1.65; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); margin-top: var(--space-5); }
+.compact { grid-template-columns: 96px minmax(0, 1fr); gap: var(--space-4); padding-block: var(--space-5); }
+.compact h1, .compact h2 { font-size: 1.125rem; letter-spacing: -.015em; }
+.compact .label { display: none; }
+.compact .message { margin-top: var(--space-2); font-size: var(--type-meta); }
+@media (max-width: 600px) { .state:not(.compact) { grid-template-columns: 1fr; gap: var(--space-4); } .state:not(.compact) > span { width: 190px; } .compact { grid-template-columns: 64px minmax(0, 1fr); align-items: start; } }

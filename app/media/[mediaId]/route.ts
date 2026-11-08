@@ -5,7 +5,7 @@ type RouteContext = { params: Promise<{ mediaId: string }> };
 
 const MAX_PUBLIC_MEDIA_BYTES = 10_485_760;
 const MEDIA_RESPONSE_HEADERS = {
-  "Cache-Control": "public, max-age=300, stale-while-revalidate=60",
+  "Cache-Control": "no-store",
   "Content-Disposition": "inline; filename=\"media.webp\"",
   "Cross-Origin-Resource-Policy": "same-origin",
   "Referrer-Policy": "no-referrer",
@@ -55,9 +55,13 @@ function limitedBody(body: ReadableStream<Uint8Array>, maximumBytes: number) {
 export async function GET(_request: Request, context: RouteContext) {
   const { mediaId } = await context.params;
   if (!isPublicMediaId(mediaId)) return emptyMediaResponse(404);
+  const query = new URL(_request.url).searchParams;
+  const variant = query.get("variant") ?? "main";
+  if ([...query.keys()].some(key => key !== "variant") || query.getAll("variant").length > 1
+    || (variant !== "main" && variant !== "card" && variant !== "thumb")) return emptyMediaResponse(400);
 
   try {
-    const upstream = await requestPublicMedia(mediaId);
+    const upstream = await requestPublicMedia(mediaId, variant);
     if (!upstream.ok || !upstream.body) return emptyMediaResponse(upstream.status === 404 ? 404 : 502);
 
     const contentType = upstream.headers.get("content-type")?.split(";", 1)[0]?.trim().toLocaleLowerCase("en-US");

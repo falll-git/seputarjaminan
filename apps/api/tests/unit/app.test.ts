@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 import request from "supertest";
+import { Readable } from "node:stream";
 import { createApp } from "../../src/app.js";
 import { AllowAllRateLimiter } from "../../src/rate-limit.js";
 
@@ -27,6 +28,22 @@ const databases = {
   ops: {},
 } as any;
 const storage = {};
+
+test("failed public media stream before first byte returns JSON 503 without stale binary headers", async () => {
+  const id = "11111111-1111-4111-8111-111111111111", institutionId = "22222222-2222-4222-8222-222222222222";
+  const app = createApp({
+    config: { ...config, flags: { ...config.flags, publicSite: true } },
+    databases: { ...databases, publicRead: { mediaObject: { findFirst: async () => ({ id, institutionId, deliveryObjectKey: `institutions/${institutionId}/media/${id}/main`, deliveryMime: "image/webp" }) } } },
+    storage: { readObject: async () => ({ sizeBytes: 9999, body: new Readable({ read() { this.destroy(new Error("disk read failed")); } }) }) },
+    ingestLimiter: new AllowAllRateLimiter(), publicLimiter: new AllowAllRateLimiter(),
+  });
+  const response = await request(app).get(`/v1/public/media/${id}`).timeout(2000).expect(503);
+  assert.match(response.headers["content-type"], /application\/json/);
+  assert.equal(response.headers["cache-control"], "no-store");
+  assert.equal(response.body.code, "MEDIA_STORAGE_UNAVAILABLE");
+  assert.equal(response.body.retryable, true);
+  assert.equal(Number(response.headers["content-length"]), Buffer.byteLength(JSON.stringify(response.body)));
+});
 
 test("live dan ready tidak membocorkan konfigurasi", async () => {
   const app = createApp({

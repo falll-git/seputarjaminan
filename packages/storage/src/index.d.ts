@@ -17,6 +17,7 @@ export interface StorageAdapter {
   objectExists(logicalKey: string): Promise<boolean>;
   moveObject(sourceKey: string, destinationKey: string): Promise<void>;
   deleteTemporaryObject(logicalKey: string): Promise<void>;
+  cleanupTransientWrites?(logicalKey: string, before: Date): Promise<number>;
   createPresignedUpload?(input: {
     logicalKey: string;
     contentType: string;
@@ -32,6 +33,7 @@ export class FilesystemStorageAdapter implements StorageAdapter {
   objectExists: StorageAdapter["objectExists"];
   moveObject: StorageAdapter["moveObject"];
   deleteTemporaryObject: StorageAdapter["deleteTemporaryObject"];
+  cleanupTransientWrites(logicalKey: string, before: Date): Promise<number>;
 }
 
 export class S3CompatibleStorageAdapter implements StorageAdapter {

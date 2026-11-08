@@ -20,7 +20,7 @@ const expectedMigrationChecksums = new Map(
   ),
 );
 
-assert.equal(expectedMigrations.length, 13, "Quality gate V1 wajib menguji tepat 13 migration yang dikunci.");
+assert.equal(expectedMigrations.length, 19, "Quality gate wajib menguji baseline V1 sampai provenance dan receipt recovery Control.");
 
 const runtimeRoles = [
   ["SJ_TEST_REGISTRY_DATABASE_URL", "sj_registry"],
@@ -42,7 +42,9 @@ const requiredCheckConstraints = [
   "aggregate_cursors_checksum_format",
   "aggregate_cursors_version_positive",
   "institution_keys_algorithm_ed25519",
+  "ingest_event_identity_checksum_valid",
   "media_delivery_complete",
+  "media_delivery_all_or_none",
   "media_objects_dimensions_positive",
   "media_objects_sha256_format",
   "media_objects_size_positive",
@@ -57,6 +59,7 @@ const requiredForcedRlsTables = [
   "bprs_profiles",
   "building_details",
   "central_jobs",
+  "control_recovery_receipts",
   "ingest_events",
   "institution_installations",
   "institution_keys",
@@ -145,6 +148,26 @@ try {
   `);
   assert.deepEqual(forcedRlsTables.rows.map((row) => row.table_name), requiredForcedRlsTables);
 
+  const lease = await owner.query("SELECT data_type FROM information_schema.columns WHERE table_schema='public' AND table_name='central_jobs' AND column_name='lease_token'");
+  assert.equal(lease.rows[0]?.data_type, "uuid");
+  const retryGrants = await owner.query("SELECT has_column_privilege('sj_ops','central_jobs','state','UPDATE') AS retry_state, has_column_privilege('sj_ops','central_jobs','payload','UPDATE') AS payload_write");
+  assert.deepEqual(retryGrants.rows[0], { retry_state: true, payload_write: false });
+  const identity = await owner.query("SELECT data_type,character_maximum_length,is_nullable FROM information_schema.columns WHERE table_schema='public' AND table_name='ingest_events' AND column_name='identity_checksum'");
+  assert.deepEqual(identity.rows[0], { data_type: 'character', character_maximum_length: 64, is_nullable: 'YES' });
+  for (const table of ['institutions', 'bprs_profiles', 'whatsapp_contacts']) {
+    const grants = await owner.query("SELECT has_table_privilege('sj_worker',$1,'SELECT') AS read, has_table_privilege('sj_worker',$1,'UPDATE') AS write", [table]);
+    assert.deepEqual(grants.rows[0], { read: true, write: false });
+  }
+
+  for (const table of ['media_objects', 'central_jobs']) {
+    const origin = await owner.query("SELECT data_type,is_nullable FROM information_schema.columns WHERE table_schema='public' AND table_name=$1 AND column_name='origin_installation_id'", [table]);
+    assert.deepEqual(origin.rows[0], { data_type: 'uuid', is_nullable: 'YES' });
+  }
+  const originTriggers = await owner.query("SELECT tgname FROM pg_trigger WHERE NOT tgisinternal AND tgname IN ('media_origin_immutable','job_origin_immutable') ORDER BY tgname");
+  assert.deepEqual(originTriggers.rows.map(row => row.tgname), ['job_origin_immutable', 'media_origin_immutable']);
+  const receiptGrants = await owner.query("SELECT has_table_privilege('sj_ingest','control_recovery_receipts','SELECT') AS read, has_table_privilege('sj_ingest','control_recovery_receipts','INSERT') AS insert, has_table_privilege('sj_ingest','control_recovery_receipts','UPDATE') AS update, has_table_privilege('sj_ingest','control_recovery_receipts','DELETE') AS delete");
+  assert.deepEqual(receiptGrants.rows[0], { read: true, insert: true, update: false, delete: false });
+
   for (const [urlVariable, membershipRole] of runtimeRoles) {
     const connectionUrl = new URL(required(urlVariable));
     const loginRole = decodeURIComponent(connectionUrl.username);
@@ -169,7 +192,7 @@ try {
   }
 
   console.log(
-    "Database terverifikasi: 13 migration beserta checksum, constraint, index, FORCE RLS, dan lima role runtime least-privilege valid.",
+    "Database terverifikasi: 19 migration beserta checksum, constraint, index, FORCE RLS, provenance, receipt recovery dan lima role runtime least-privilege valid.",
   );
 } finally {
   await owner.end();

@@ -36,6 +36,13 @@ export const notFoundHandler: RequestHandler = (_request, _response, next) => {
 };
 
 export const errorHandler: ErrorRequestHandler = (error, request, response, _next) => {
+  if (response.headersSent) { _next(error); return; }
+  // A failed media stream may have prepared binary headers but sent no bytes.
+  response.removeHeader("Content-Length");
+  response.removeHeader("Content-Type");
+  if (error?.type === "entity.too.large") error = new ApiError(413, "REQUEST_TOO_LARGE", "Ukuran kiriman melebihi batas yang diizinkan.");
+  // Parser messages can quote submitted data; never return/log the raw error.
+  if (error?.type === "entity.parse.failed") error = new ApiError(400, "JSON_INVALID", "Format JSON kiriman tidak valid.");
   const known = error instanceof ApiError;
   const status = known ? error.status : 500;
   const code = known ? error.code : "INTERNAL_ERROR";

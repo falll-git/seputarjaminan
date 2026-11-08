@@ -1,12 +1,11 @@
-export default function BrandLockup({ inverted = false }: { inverted?: boolean }) {
+import styles from "./BrandLockup.module.css";
+
+export default function BrandLockup({ compact = false }: { compact?: boolean }) {
   return (
-    <a className={`brand-lockup${inverted ? " is-inverted" : ""}`} href="/" aria-label="Seputarjaminan by ruwang, kembali ke beranda">
-      <span className="brand-type">
-        <strong>seputarjaminan</strong>
-        <span className="brand-signature">
-          <small>by</small>
-          <span>ruwang</span>
-        </span>
+    <a className={`${styles.lockup}${compact ? ` ${styles.compact}` : ""}`} data-brand-lockup href="/" aria-label="Seputarjaminan by ruwang, kembali ke beranda">
+      <span className={styles.name} aria-hidden="true"><span>seputar</span>{" "}<strong>jaminan</strong></span>
+      <span className={styles.signature} aria-hidden="true">
+        <span>by</span><span className={styles.parent}>ruwang</span>
       </span>
     </a>
   );

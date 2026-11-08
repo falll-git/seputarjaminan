@@ -1,8 +1,9 @@
 import { PrismaPg } from "@prisma/adapter-pg";
 import { PrismaClient, Prisma } from "../../../generated/prisma/client.ts";
+import { serializeAdapterTransactions } from "../../../shared/serialized-pg.ts";
 
 function createClient(connectionString: string) {
-  const adapter = new PrismaPg({ connectionString, options: "-c timezone=UTC" });
+  const adapter = serializeAdapterTransactions(new PrismaPg({ connectionString, options: "-c timezone=UTC" }));
   return new PrismaClient({ adapter });
 }
 

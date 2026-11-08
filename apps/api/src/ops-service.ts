@@ -8,6 +8,13 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-
 const SLUG = /^[a-z0-9]+(?:-[a-z0-9]+)*$/u;
 const REASON = /^[A-Z][A-Z0-9_]*$/u;
 
+async function lockSubject(transaction: TransactionClient, type: string, id: string, institution: string) {
+  // Closed allowlist, never a caller-provided SQL identifier. Match ingest's
+  // subject-before-quarantine ordering so resolution reads the latest intent.
+  const table = type === "PROFILE" ? "bprs_profiles" : type === "PUBLICATION" ? "publications" : "media_objects";
+  await transaction.$queryRaw(Prisma.sql`SELECT id FROM ${Prisma.raw(table)} WHERE id=${id}::uuid AND institution_id=${institution}::uuid FOR UPDATE`);
+}
+
 function requiredText(value: unknown, label: string, max = 200): string {
   if (typeof value !== "string" || value.trim().length < 1 || value.trim().length > max) {
     throw new ApiError(422, "OPS_INPUT_INVALID", `${label} tidak valid.`);
@@ -232,6 +239,7 @@ export class OpsService {
     }
     const reason = reasonInput(body);
     const quarantine = await this.databases.ops.$transaction(async (transaction) => {
+      await lockSubject(transaction, subjectType, subjectId, institutionId);
       let previousState: string;
       if (subjectType === "PROFILE") {
         const subject = await transaction.bprsProfile.findFirst({ where: { id: subjectId, institutionId } });
@@ -279,6 +287,11 @@ export class OpsService {
     const record = await this.databases.ops.quarantineRecord.findUnique({ where: { id: quarantineId } });
     if (!record || record.state !== "ACTIVE") throw new ApiError(404, "QUARANTINE_NOT_FOUND", "Karantina aktif tidak ditemukan.");
     await this.databases.ops.$transaction(async (transaction) => {
+      await lockSubject(transaction, record.subjectType, record.subjectId, record.institutionId);
+      const latest = await transaction.quarantineRecord.findUnique({ where: { id: quarantineId } });
+      if (!latest || latest.state !== "ACTIVE") throw new ApiError(404, "QUARANTINE_NOT_FOUND", "Karantina aktif tidak ditemukan.");
+      // Do not restore the desired state read before waiting for the subject lock.
+      Object.assign(record, latest);
       if (record.subjectType === "PROFILE") {
         if (!(["ACTIVE", "HIDDEN"] as string[]).includes(record.previousState)) throw new ApiError(409, "RESTORE_STATE_INVALID", "Status profil sebelumnya tidak dapat dipulihkan.");
         const updated = await transaction.bprsProfile.updateMany({
@@ -321,7 +334,10 @@ export class OpsService {
     await this.databases.ops.$queryRaw`SELECT 1`;
     const [deadLetter, overdue] = await Promise.all([
       this.databases.ops.centralJob.count({ where: { state: "DEAD_LETTER" } }),
-      this.databases.ops.centralJob.count({ where: { state: { in: ["PENDING", "RETRY_WAIT"] }, availableAt: { lt: new Date(checkedAt.getTime() - 60_000) } } }),
+      this.databases.ops.centralJob.count({ where: { OR: [
+        { state: { in: ["PENDING", "RETRY_WAIT"] }, availableAt: { lt: new Date(checkedAt.getTime() - 60_000) } },
+        { state: "PROCESSING", leaseUntil: { lt: checkedAt } },
+      ] } }),
     ]);
     const queueStatus = deadLetter > 0 || overdue > 0 ? "DEGRADED" : "OK";
     return {
@@ -329,5 +345,23 @@ export class OpsService {
       checked_at: checkedAt.toISOString(),
       dependencies: { database: "OK", worker_queue: queueStatus },
     };
+  }
+
+  async retryJob(jobIdValue: unknown, input: unknown, principal: OpsPrincipal, requestId: string) {
+    const jobId = requiredUuid(jobIdValue, "Job ID");
+    const reason = reasonInput(input);
+    await this.databases.ops.$transaction(async transaction => {
+      const rows = await transaction.$queryRaw<{ id: string }[]>`
+        UPDATE central_jobs SET state='PENDING', available_at=clock_timestamp(), lease_until=NULL,
+          lease_token=NULL, attempt_count=0, last_error_code=NULL, updated_at=clock_timestamp()
+        WHERE id=${jobId}::uuid AND state='DEAD_LETTER' RETURNING id
+      `;
+      if (rows.length !== 1) throw new ApiError(409, "JOB_NOT_RETRYABLE", "Hanya job dead-letter yang dapat dicoba ulang.");
+      // Does not change media/publication status. Revoke and quarantine still win.
+      await audit(transaction, principal, requestId, "JOB_RETRY_AUTHORIZED", "CENTRAL_JOB", jobId, {
+        reason_code: reason.reasonCode, safe_detail: reason.safeDetail,
+      });
+    });
+    return result(requestId, "RETRY_SCHEDULED", jobId);
   }
 }

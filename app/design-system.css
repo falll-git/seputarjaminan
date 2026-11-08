@@ -2,35 +2,6 @@
  * Seputar Jaminan public design system.
  * This layer is intentionally separate from Ruwang's internal dashboard system.
  */
-:root {
-  --type-display-hero: clamp(4.5rem, 6.15vw, 6rem);
-  --type-page-title: clamp(3.5rem, 5.15vw, 4.5rem);
-  --type-section-title: clamp(2.5rem, 4.35vw, 4rem);
-  --type-card-title: clamp(1.75rem, 2.15vw, 2.25rem);
-  --type-body-lead: 1.125rem;
-  --type-body: 1.0625rem;
-  --type-support: 0.9375rem;
-  --type-meta: 0.875rem;
-  --type-index: 0.8125rem;
-
-  --icon-action: 1.5rem;
-  --icon-primary: 1.875rem;
-  --icon-feature: 2rem;
-
-  --radius-control: 0.25rem;
-  --radius-surface: 0.5rem;
-  --radius-modal: 0.75rem;
-
-  --error: #a33a3a;
-  --error-soft: #f7e9e7;
-  --focus-ring: rgba(23, 107, 206, 0.34);
-  --shadow-floating: 0 18px 48px rgba(21, 26, 36, 0.13);
-  --shadow-modal: 0 30px 90px rgba(21, 26, 36, 0.28);
-
-  --motion-fast: 180ms;
-  --motion-standard: 280ms;
-  --motion-slow: 400ms;
-}
 
 body {
   font-size: var(--type-body);
@@ -42,7 +13,6 @@ body {
 .hero-assurance { font-size: var(--type-meta); }
 .hero-caption-copy small { font-size: var(--type-meta); }
 .hero-caption-copy > span { font-size: var(--type-meta); }
-.page-intro-aside span { font-size: var(--type-meta); }
 .catalog-province-filter > button { font-size: var(--type-meta); }
 .asset-contact-panel > small { font-size: var(--type-support); }
 .category-index-list small { font-size: var(--type-support); }
@@ -67,7 +37,7 @@ select:focus-visible {
   line-height: 0.92;
 }
 
-:is(.page-intro h1, .bprs-page-intro h1, .bprs-profile-heading h1, .asset-detail-heading h1, .interest-masthead h1, .not-found-copy h1) {
+:is(.bprs-page-intro h1, .bprs-profile-heading h1, .asset-detail-heading h1, .interest-masthead h1, .not-found-copy h1) {
   font-size: var(--type-page-title);
   line-height: 0.96;
   letter-spacing: -0.06em;
@@ -100,7 +70,7 @@ select:focus-visible {
   font-size: var(--type-card-title);
 }
 
-:is(.hero-intro, .page-intro-bottom > p, .bprs-page-intro-grid > div > p:first-child, .bprs-profile-description > p:first-child, .interest-masthead-intro > p, .asset-detail-lead, .dossier-description) {
+:is(.hero-intro, .bprs-page-intro-grid > div > p:first-child, .bprs-profile-description > p:first-child, .interest-masthead-intro > p, .asset-detail-lead, .dossier-description) {
   font-size: var(--type-body-lead);
 }
 
@@ -128,7 +98,6 @@ select:focus-visible {
   .home-section-head > div > p,
   .category-index > header > p:first-child,
   .hero-kicker,
-  .page-intro-copy > p,
   .asset-detail-kicker,
   .related-assets-heading p,
   .interest-flow-copy > p,
@@ -182,7 +151,6 @@ select:focus-visible {
   .hero-kicker span,
   .hero-folio,
   .hero-progress,
-  .page-intro-index,
   .page-folio,
   .asset-photo-code,
   .category-index-list > a > span,
@@ -237,13 +205,13 @@ select:focus-visible {
 }
 
 .mobile-navigation nav a[aria-current="page"] {
-  color: #ffffff;
-  border-bottom-color: #9dc8ff;
+  color: var(--color-inverse-text);
+  border-bottom-color: var(--color-inverse-accent);
 }
 
 .mobile-navigation nav a[aria-current="page"] span,
 .mobile-navigation nav a[aria-current="page"] svg {
-  color: #9dc8ff;
+  color: var(--color-inverse-accent);
 }
 
 .filter-group > button {
@@ -306,20 +274,16 @@ select:focus-visible {
   to { opacity: 1; transform: translateY(0); }
 }
 
-:is(.hero-copy, .page-intro-copy, .bprs-page-intro-grid, .bprs-profile-heading, .asset-detail-information, .interest-masthead > *, .not-found-copy) {
-  animation: publicSystemReveal var(--motion-slow) var(--ease-out) both;
-}
-
-:is(.hero-showcase, .catalog-toolbar, .bprs-directory-tools, .asset-gallery, .home-process-head, .home-process-list) {
-  animation: publicSystemReveal var(--motion-slow) var(--ease-out) 60ms both;
-}
+/* Public text, tools and results are never gated behind entrance animations. */
+.asset-gallery-image-frame { animation: galleryFrameIn var(--motion-fast) ease-out; }
+@keyframes galleryFrameIn { from { opacity: .82; } to { opacity: 1; } }
 
 :is(.button-primary, .catalog-search-submit, .bprs-filter-submit, .asset-whatsapp-cta, .dossier-whatsapp) {
   transition: background-color var(--motion-fast), color var(--motion-fast), transform var(--motion-standard) var(--ease-out);
 }
 
 :is(.button-primary, .catalog-search-submit, .bprs-filter-submit, .asset-whatsapp-cta, .dossier-whatsapp):hover {
-  transform: translateY(-2px);
+  transform: none;
 }
 
 @media (max-width: 920px) {
@@ -327,13 +291,9 @@ select:focus-visible {
 }
 
 @media (max-width: 620px) {
-  :root {
-    --type-section-title: clamp(2.5rem, 11vw, 2.75rem);
-    --type-card-title: clamp(1.625rem, 8vw, 2rem);
-  }
 
   .hero h1,
-  :is(.page-intro h1, .bprs-page-intro h1, .bprs-profile-heading h1, .asset-detail-heading h1, .interest-masthead h1, .not-found-copy h1) {
+  :is(.bprs-page-intro h1, .bprs-profile-heading h1, .asset-detail-heading h1, .interest-masthead h1, .not-found-copy h1) {
     font-size: clamp(2.5rem, 12vw, 3rem);
     line-height: 0.98;
     letter-spacing: -0.052em;
@@ -346,7 +306,8 @@ select:focus-visible {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  :is(.hero-copy, .page-intro-copy, .bprs-page-intro-grid, .bprs-profile-heading, .asset-detail-information, .interest-masthead > *, .not-found-copy, .hero-showcase, .catalog-toolbar, .bprs-directory-tools, .asset-gallery, .home-process-head, .home-process-list) {
+  .asset-gallery-image-frame { animation: none; }
+  :is(.hero-copy, .bprs-page-intro-grid, .bprs-profile-heading, .asset-detail-information, .interest-masthead > *, .not-found-copy, .hero-showcase, .catalog-toolbar, .bprs-directory-tools, .asset-gallery, .home-process-head, .home-process-list) {
     animation: none;
   }
 

@@ -44,6 +44,7 @@ yarn-error.log*
 dist/
 /generated/
 /.wrangler/
+/output/
 /outputs/
 /work/
 /docs/

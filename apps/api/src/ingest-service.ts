@@ -1,4 +1,6 @@
 import type { Prisma } from "../../../generated/prisma/client.ts";
+import { payloadChecksum } from "@seputarjaminan/contracts";
+import { retryTransaction } from "./transaction-retry.js";
 import type { DatabaseClients, TransactionClient } from "./database.js";
 import { withInstitution } from "./database.js";
 import { ApiError } from "./errors.js";
@@ -16,7 +18,7 @@ type IntegrationEvent = {
 };
 
 function aggregateType(eventType: string) {
-  if (eventType === "UPSERT_BPRS_PROFILE") return "BPRS_PROFILE";
+  if (["UPSERT_BPRS_PROFILE", "HIDE_BPRS_PROFILE"].includes(eventType)) return "BPRS_PROFILE";
   if (eventType.includes("WHATSAPP_CONTACT")) return "WHATSAPP_CONTACT";
   if (eventType === "REVOKE_MEDIA") return "MEDIA";
   return "PUBLICATION";
@@ -25,6 +27,7 @@ function aggregateType(eventType: string) {
 function expectedState(eventType: string) {
   const states: Record<string, string> = {
     UPSERT_BPRS_PROFILE: "ACTIVE",
+    HIDE_BPRS_PROFILE: "HIDDEN",
     UPSERT_WHATSAPP_CONTACT: "VERIFIED",
     REVOKE_WHATSAPP_CONTACT: "REVOKED",
     UPSERT_PUBLICATION_SNAPSHOT: "PUBLISHED",
@@ -103,6 +106,32 @@ async function applyProfile(transaction: TransactionClient, event: IntegrationEv
       "PROFILE",
       existingProfile.id,
       "ACTIVE",
+    );
+  }
+}
+
+async function hideProfile(transaction: TransactionClient, event: IntegrationEvent) {
+  const payload = event.payload as any;
+  const profile = await transaction.bprsProfile.findUnique({
+    where: { institutionId: event.institution_id },
+  });
+  if (!profile) return;
+  await transaction.bprsProfile.update({
+    where: { id: profile.id },
+    data: {
+      sourceVersion: event.aggregate_version,
+      state: profile.state === "QUARANTINED" ? "QUARANTINED" : "HIDDEN",
+      profileUpdatedAt: new Date(payload.hidden_at),
+      payloadChecksum: event.payload_checksum,
+    },
+  });
+  if (profile.state === "QUARANTINED") {
+    await rememberDesiredStateDuringQuarantine(
+      transaction,
+      event.institution_id,
+      "PROFILE",
+      profile.id,
+      "HIDDEN",
     );
   }
 }
@@ -240,7 +269,7 @@ async function replaceCategoryDetail(
   }
 }
 
-async function applyPublication(transaction: TransactionClient, event: IntegrationEvent) {
+async function applyPublication(transaction: TransactionClient, event: IntegrationEvent, installationId: string) {
   const payload = event.payload as any;
   const existingPublication = await transaction.publication.findUnique({
     where: {
@@ -371,8 +400,9 @@ async function applyPublication(transaction: TransactionClient, event: Integrati
     create: {
       institutionId: event.institution_id,
       jobType: "REBUILD_PUBLICATION_PROJECTION",
+      originInstallationId: installationId,
       dedupeKey: "projection:" + publication.id + ":" + event.aggregate_version,
-      payload: { publication_id: publication.id },
+      payload: { publication_id: publication.id, event_id: event.event_id, aggregate_version: event.aggregate_version, payload_checksum: event.payload_checksum },
     },
     update: {},
   });
@@ -467,11 +497,12 @@ async function revokeMedia(transaction: TransactionClient, event: IntegrationEve
   }
 }
 
-async function applyBusinessEvent(transaction: TransactionClient, event: IntegrationEvent) {
+async function applyBusinessEvent(transaction: TransactionClient, event: IntegrationEvent, installationId: string) {
   if (event.event_type === "UPSERT_BPRS_PROFILE") return applyProfile(transaction, event);
+  if (event.event_type === "HIDE_BPRS_PROFILE") return hideProfile(transaction, event);
   if (event.event_type === "UPSERT_WHATSAPP_CONTACT") return applyContact(transaction, event);
   if (event.event_type === "REVOKE_WHATSAPP_CONTACT") return revokeContact(transaction, event);
-  if (event.event_type === "UPSERT_PUBLICATION_SNAPSHOT") return applyPublication(transaction, event);
+  if (event.event_type === "UPSERT_PUBLICATION_SNAPSHOT") return applyPublication(transaction, event, installationId);
   if (["UNPUBLISH_PUBLICATION", "ARCHIVE_PUBLICATION"].includes(event.event_type)) {
     return unpublishOrArchive(transaction, event);
   }
@@ -492,7 +523,8 @@ export class IngestService {
     if (event.institution_id !== authentication.institutionId) {
       throw new ApiError(403, "INSTITUTION_MISMATCH", "Identitas BPRS tidak sesuai koneksi.");
     }
-    return withInstitution(
+    const identityChecksum = payloadChecksum(event);
+    return retryTransaction(() => withInstitution(
       this.databases.ingest,
       authentication.institutionId,
       async (transaction) => {
@@ -503,10 +535,21 @@ export class IngestService {
           if (
             existing.institutionId === event.institution_id
             && existing.payloadChecksum === event.payload_checksum
+            && existing.eventType === event.event_type
+            && existing.aggregateId === event.aggregate_id
+            && existing.aggregateVersion === event.aggregate_version
+            && existing.schemaVersion === event.schema_version
+            && existing.state === "APPLIED"
+            // Historical rows predate the identity hash. Never invent their
+            // occurred_at; compare every identity field that was retained.
+            && (!existing.identityChecksum || existing.identityChecksum === identityChecksum)
           ) {
+            const active = await transaction.aggregateCursor.findUnique({
+              where: { institutionId_aggregateId: { institutionId: event.institution_id, aggregateId: event.aggregate_id } },
+            });
             return {
               status: "DUPLICATE" as const,
-              activeAggregateVersion: existing.aggregateVersion,
+              activeAggregateVersion: active?.aggregateVersion ?? existing.aggregateVersion,
             };
           }
           throw new ApiError(409, "EVENT_ID_CONFLICT", "Event ID sudah digunakan untuk isi berbeda.");
@@ -520,6 +563,9 @@ export class IngestService {
             },
           },
         });
+        if (cursor && cursor.aggregateType !== aggregateType(event.event_type)) {
+          throw new ApiError(409, "AGGREGATE_TYPE_CONFLICT", "ID agregat sudah digunakan untuk jenis data berbeda.");
+        }
         if (cursor && event.aggregate_version <= cursor.aggregateVersion) {
           throw new ApiError(409, "AGGREGATE_VERSION_CONFLICT", "Versi data lebih lama dari versi yang sudah diterima.");
         }
@@ -536,6 +582,7 @@ export class IngestService {
             eventType: event.event_type,
             schemaVersion: event.schema_version,
             payloadChecksum: event.payload_checksum,
+            identityChecksum,
             payload: asJson(event.payload),
             requestTimestamp: authentication.requestTimestamp,
             nonceHash: authentication.nonceHash,
@@ -543,7 +590,7 @@ export class IngestService {
           },
         });
 
-        await applyBusinessEvent(transaction, event);
+        await applyBusinessEvent(transaction, event, authentication.installationId);
         await transaction.aggregateCursor.upsert({
           where: {
             institutionId_aggregateId: {
@@ -577,6 +624,6 @@ export class IngestService {
         return { status: "APPLIED" as const, activeAggregateVersion: event.aggregate_version };
       },
       { isolationLevel: "Serializable" },
-    );
+    ));
   }
 }

@@ -51,6 +51,33 @@ paths:
         "422": { $ref: "#/components/responses/Unprocessable" }
         "429": { $ref: "#/components/responses/TooManyRequests" }
         "500": { $ref: "#/components/responses/InternalError" }
+  /v1/public/media/{mediaId}:
+    get:
+      tags: [Public]
+      operationId: getPublicMedia
+      summary: Gambar turunan yang masih memenuhi kelayakan publik, bukan original
+      security: []
+      parameters:
+        - name: mediaId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+        - name: variant
+          in: query
+          schema: { type: string, enum: [main, card, thumb], default: main }
+      responses:
+        "200":
+          description: WebP tanpa metadata privat; media lama tanpa varian menggunakan derivative main. Cache-Control no-store.
+          content:
+            image/webp:
+              schema: { type: string, format: binary }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "404": { $ref: "#/components/responses/NotFound" }
+        "503":
+          description: Penyimpanan gambar sementara tidak tersedia
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/ErrorResponse" }
   /v1/media/upload-sessions:
     post:
       tags: [Media]
@@ -218,21 +245,46 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/public/showcase:
+    get:
+      tags: [Public]
+      operationId: getPublicShowcase
+      summary: Sampel acak maksimal delapan aset yang layak publik
+      description: Tanpa parameter. Seluruh populasi layak publik memiliki peluang dipilih; tidak ada duplikasi, total global, cursor lanjutan atau klaim rekomendasi. Urutan stabil dalam respons, tidak dijamin sama antar request. Cache-Control no-store. Eligibility dan allowlist sama dengan katalog.
+      security: []
+      responses:
+        "200":
+          description: Etalase acak, termasuk daftar kosong
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, next_cursor]
+                properties:
+                  items:
+                    type: array
+                    maxItems: 8
+                    items: { $ref: "#/components/schemas/PublicAssetCard" }
+                  next_cursor: { type: "null" }
+        "400": { $ref: "#/components/responses/BadRequest" }
+        "429": { $ref: "#/components/responses/TooManyRequests" }
   /v1/public/assets:
     get:
       tags: [Public]
       operationId: listPublicAssets
       summary: Daftar aset publik yang benar-benar aktif
+      description: Parameter tidak dikenal, berulang, kosong, atau tidak valid ditolak 400. Cursor opaque terikat filter dan urutan; jangan digunakan kembali setelah filter berubah. Urutan public_updated_at lalu id searah. Tidak ada total global. Provinsi/kota dinormalisasi NFKC dan whitespace serta dibandingkan tanpa membedakan kapitalisasi.
       security: []
       parameters:
         - $ref: "#/components/parameters/Cursor"
         - $ref: "#/components/parameters/Limit"
         - { name: q, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
-        - { name: category, in: query, schema: { type: string } }
-        - { name: subcategory, in: query, schema: { type: string } }
-        - { name: province, in: query, schema: { type: string } }
-        - { name: city_regency, in: query, schema: { type: string } }
-        - { name: institution, in: query, schema: { type: string } }
+        - { name: category, in: query, schema: { type: string, enum: [TANAH, BANGUNAN, MESIN_PERALATAN, KENDARAAN] } }
+        - { name: subcategory, in: query, description: Kode taxonomy; harus sesuai category jika keduanya diberikan., schema: { type: string, minLength: 1, maxLength: 60 } }
+        - { name: province, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
+        - { name: city_regency, in: query, schema: { type: string, minLength: 1, maxLength: 100 } }
+        - { name: institution, in: query, schema: { type: string, maxLength: 100, pattern: "^[a-z0-9]+(?:-[a-z0-9]+)*$" } }
         - name: sort
           in: query
           schema:
@@ -277,6 +329,7 @@ paths:
       tags: [Public]
       operationId: listPublicInstitutions
       summary: Daftar BPRS penerbit aktif
+      description: Hanya BPRS dengan aset eligible. Cursor opaque terikat q/province; urutan public_slug menaik. Parameter tidak dikenal, berulang, kosong, dan cursor tidak sesuai ditolak 400. published_asset_count adalah jumlah aset eligible BPRS, bukan total hasil direktori.
       security: []
       parameters:
         - $ref: "#/components/parameters/Cursor"
@@ -642,6 +695,35 @@ paths:
         "401": { $ref: "#/components/responses/Unauthorized" }
         "403": { $ref: "#/components/responses/Forbidden" }
         "404": { $ref: "#/components/responses/NotFound" }
+  /v1/ops/jobs/{jobId}/retry:
+    post:
+      tags: [Operations]
+      operationId: retryDeadLetterJob
+      summary: Menjadwalkan ulang dead-letter melalui sesi operasi privat dengan audit
+      description: Tidak mengubah status media atau melewati revoke dan quarantine. Tidak tersedia untuk pengunjung atau credential BPRS.
+      security:
+        - OpsSession: []
+          CsrfToken: []
+      parameters:
+        - name: jobId
+          in: path
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: "#/components/schemas/OpsReason" }
+      responses:
+        "200":
+          description: Retry dicatat dan dijadwalkan tanpa mengubah payload
+          content:
+            application/json:
+              schema: { $ref: "#/components/schemas/OpsActionResult" }
+        "401": { $ref: "#/components/responses/Unauthorized" }
+        "403": { $ref: "#/components/responses/Forbidden" }
+        "409": { $ref: "#/components/responses/Conflict" }
+        "422": { $ref: "#/components/responses/Unprocessable" }
   /v1/ops/health:
     get:
       tags: [Operations]
@@ -748,13 +830,21 @@ components:
   schemas:
     IngestAcknowledgment:
       type: object
+      description: >-
+        APPLIED acknowledges the committed ingest transaction, not search projection,
+        media delivery or current public visibility. DUPLICATE never reapplies an event.
+        Retry with the same immutable event envelope and a new signed transport nonce.
+        Changing event metadata under an existing event_id is a conflict.
       additionalProperties: false
       required: [request_id, status, event_id, active_aggregate_version, acknowledged_at]
       properties:
         request_id: { type: string, format: uuid }
         status: { type: string, enum: [APPLIED, DUPLICATE] }
         event_id: { type: string, format: uuid }
-        active_aggregate_version: { type: integer, minimum: 1 }
+        active_aggregate_version:
+          type: integer
+          minimum: 1
+          description: Current central cursor version at acknowledgment time; may exceed the duplicated event version.
         acknowledged_at: { type: string, format: date-time }
     MediaStatus:
       type: object
@@ -768,6 +858,12 @@ components:
         checked_at: { type: string, format: date-time }
     ReconciliationRun:
       type: object
+      description: >-
+        A completed comparison checks cursor identity and actual database lifecycle,
+        publication eligibility, media readiness metadata and search projection version.
+        Zero mismatches is a point-in-time database comparison, not a storage/network
+        health guarantee. Quarantine or expired confirmation can mismatch a matching cursor.
+        Recommended actions are diagnostic only and never authorize automatic state repair.
       additionalProperties: false
       required: [request_id, run_id, status, count_checked, count_mismatch, mismatches]
       properties:
@@ -827,11 +923,20 @@ components:
         availability: { type: string, enum: [AVAILABLE] }
         photo_count: { type: integer, minimum: 1, maximum: 10 }
         public_updated_at: { type: string, format: date-time }
+        summary_attributes: { $ref: "#/components/schemas/PublicCardAttributes" }
     PublicAssetDetail:
       type: object
       additionalProperties: false
       required: [reference_code, title, category, subcategory, location, cover, institution, availability, photo_count, public_updated_at, description, attributes, media, whatsapp_url]
       properties:
+        public_asset_version:
+          type: integer
+          minimum: 1
+          description: Applied SJ publication event aggregate version, not a bank draft revision or a guarantee of continued availability.
+        public_page_url:
+          type: [string, 'null']
+          format: uri
+          description: Canonical asset page from configured website origin; null when not configured. Never inferred from API origin.
         reference_code: { type: string, pattern: "^SJ-[A-Z0-9]{8}$" }
         title: { type: string, minLength: 1 }
         category: { type: string }
@@ -842,19 +947,46 @@ components:
         availability: { type: string, enum: [AVAILABLE] }
         photo_count: { type: integer, minimum: 1, maximum: 10 }
         public_updated_at: { type: string, format: date-time }
+        summary_attributes: { $ref: "#/components/schemas/PublicCardAttributes" }
         description: { type: string, minLength: 1 }
-        attributes:
-          type: object
-          additionalProperties:
-            oneOf:
-              - { type: string }
-              - { type: number }
+        attributes: { $ref: "#/components/schemas/PublicAttributes" }
         media:
           type: array
           minItems: 1
           maxItems: 10
           items: { $ref: "#/components/schemas/PublicMedia" }
         whatsapp_url: { type: string, format: uri }
+    PublicCardAttributes:
+      type: object
+      additionalProperties: false
+      maxProperties: 2
+      description: Subset opsional atribut publik yang sudah tersedia. Tanah luas tanah; bangunan luas tanah/bangunan; mesin merek/model; kendaraan model/jarak tempuh. Nol bukan data kosong. Tidak ada request detail per kartu.
+      properties:
+        land_area_m2: { type: number }
+        building_area_m2: { type: number }
+        brand_or_manufacturer: { type: string }
+        model_or_type: { type: string }
+        mileage_km: { type: number }
+    PublicAttributes:
+      type: object
+      additionalProperties: false
+      description: Hanya atribut kategori publik; field yang tidak tersedia dihilangkan, angka nol dipertahankan.
+      properties:
+        land_area_m2: { type: number }
+        building_area_m2: { type: number }
+        floor_count: { type: number }
+        manufacture_year: { type: number }
+        mileage_km: { type: number }
+        brand_or_manufacturer: { type: string }
+        model_or_type: { type: string }
+        brand: { type: string }
+        public_capacity: { type: string }
+        public_condition: { type: string, enum: [SANGAT_BAIK, BAIK, CUKUP, PERLU_PERBAIKAN] }
+        contour: { type: string, enum: [DATAR, MIRING, BERKONTUR] }
+        road_access: { type: string, enum: [RODA_DUA, MOBIL, TRUK] }
+        public_usage: { type: string, enum: [HUNIAN, KOMERSIAL, PERKANTORAN, PERGUDANGAN, INDUSTRI, SERBAGUNA] }
+        transmission: { type: string, enum: [MANUAL, OTOMATIS] }
+        fuel_type: { type: string, enum: [BENSIN, DIESEL, LISTRIK, HIBRIDA, GAS] }
     PublicInstitution:
       type: object
       additionalProperties: false
@@ -867,6 +999,14 @@ components:
         office_city_regency: { type: string, minLength: 1 }
         office_province: { type: string, minLength: 1 }
         published_asset_count: { type: integer, minimum: 0 }
+        public_profile_version:
+          type: integer
+          minimum: 1
+          description: Detail only. Source profile event aggregate version applied by SJ, not a bank draft revision or proof of current availability after the response.
+        public_page_url:
+          type: [string, 'null']
+          format: uri
+          description: Detail only. Canonical profile page from configured website origin; null when not configured. Never inferred from API origin.
     PublicTaxonomy:
       type: object
       additionalProperties: false

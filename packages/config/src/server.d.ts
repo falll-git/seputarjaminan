@@ -23,6 +23,7 @@ export type ApiServerConfig = {
   redisUrl?: string;
   publicApiBaseUrl: string;
   publicMediaBaseUrl: string;
+  publicWebsiteOrigin?: string;
   storage: StorageConfig;
   security: {
     signatureToleranceSeconds: number;
@@ -35,17 +36,34 @@ export type ApiServerConfig = {
   };
   rateLimit: { ingestPerMinute?: number; publicPerMinute?: number; opsAuthPerMinute?: number };
   uploadSessionTtlSeconds: number;
-  flags: { publicSite: boolean; ingest: boolean; mediaUpload: boolean };
+  flags: { publicSite: boolean; ingest: boolean; mediaUpload: boolean; controlMonitoring: boolean; controlRecovery: boolean };
+  controlRecovery: {
+    bindings: {instanceId:string;institutionId:string;installationId:string;keyId:string;publicKey:string}[];
+    audience?:string;responseKeyId?:string;responsePrivateKey?:string;
+  };
+  controlMonitoring: {
+    instanceId?: string;
+    keyId?: string;
+    publicKey?: string;
+    responseKeyId?: string;
+    responsePrivateKey?: string;
+    audience?: string;
+    frontendUrl?: string;
+    probeTimeoutMs: number;
+    workerHeartbeatKey: string;
+  };
 };
 
 export type WorkerServerConfig = {
   service: "worker";
   nodeEnv: "development" | "test" | "production";
   workerDatabaseUrl: string;
+  redisUrl?: string;
   storage: StorageConfig;
   security: { mediaFileMaxBytes: number };
-  malware: { mode: "CLAMAV" | "TEST_SAFE"; command: string };
+  malware: { mode: "CLAMAV" | "TEST_SAFE"; command: string; dockerContainer?: string };
   flags: { worker: boolean };
+  heartbeat: { key: string; intervalMs: number; ttlMs: number };
 };
 
 export type ServerConfig = ApiServerConfig | WorkerServerConfig;

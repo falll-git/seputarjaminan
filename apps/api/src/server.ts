@@ -1,12 +1,15 @@
 import pino from "pino";
+import { fileURLToPath } from "node:url";
 import { loadApiServerConfig, safeConfigSummary } from "@seputarjaminan/config/server";
 import { createStorageAdapter } from "@seputarjaminan/storage";
 import { createApp } from "./app.js";
 import { createDatabaseClients } from "./database.js";
 import { AllowAllRateLimiter, RedisFixedWindowRateLimiter } from "./rate-limit.js";
+import { RedisMonitoringRuntime } from "./monitoring-runtime.js";
+import { createShutdown } from "./shutdown.js";
 
 const config = loadApiServerConfig(process.env, {
-  repositoryRoot: new URL("../../../", import.meta.url).pathname,
+  repositoryRoot: fileURLToPath(new URL("../../../", import.meta.url)),
 });
 const logger = pino({
   level: process.env.LOG_LEVEL || "info",
@@ -32,20 +35,23 @@ const ingestLimiter = config.redisUrl
 const publicLimiter = config.redisUrl
   ? new RedisFixedWindowRateLimiter(config.redisUrl)
   : new AllowAllRateLimiter();
-const app = createApp({ config, databases, storage, ingestLimiter, publicLimiter, logger });
+const monitoringRuntime = config.redisUrl ? new RedisMonitoringRuntime(config.redisUrl) : undefined;
+const app = createApp({ config, databases, storage, ingestLimiter, publicLimiter, monitoringRuntime, logger });
 
 const server = app.listen(config.api.port, config.api.host, () => {
   logger.info({ config: safeConfigSummary(config) }, "api_started");
 });
 
+const stop = createShutdown({server, cleanup: [
+  () => databases.disconnect(),
+  async () => { if (ingestLimiter instanceof RedisFixedWindowRateLimiter) await ingestLimiter.disconnect(); },
+  async () => { if (publicLimiter instanceof RedisFixedWindowRateLimiter) await publicLimiter.disconnect(); },
+  async () => { if (monitoringRuntime) await monitoringRuntime.disconnect(); },
+], exit: code => process.exit(code), onError: () => logger.error("api_shutdown_incomplete")});
+
 async function shutdown(signal: string) {
   logger.info({ signal }, "api_shutdown_started");
-  server.close(async () => {
-    await databases.disconnect();
-    if (ingestLimiter instanceof RedisFixedWindowRateLimiter) await ingestLimiter.disconnect();
-    if (publicLimiter instanceof RedisFixedWindowRateLimiter) await publicLimiter.disconnect();
-    process.exit(0);
-  });
+  await stop();
 }
 
 process.on("SIGTERM", () => void shutdown("SIGTERM"));

@@ -9,31 +9,40 @@ function captureRuntimeErrors(page: Page) {
   return errors;
 }
 
-test("beranda memuat data nyata fixture dan carousel hanya bergerak melalui kontrol", async ({ page }) => {
+test("beranda: search di header, carousel manual menjeda rotasi", async ({ page }) => {
   const errors = captureRuntimeErrors(page);
   await page.goto("/");
-  await expect(page.getByRole("heading", { name: "Temukan aset. Kenali penerbitnya." })).toBeVisible();
-  await expect(page.getByLabel("Slide 1 dari 5")).toBeVisible();
-  await page.getByRole("button", { name: "Aset berikutnya" }).click();
-  await expect(page.getByLabel("Slide 2 dari 5")).toBeVisible();
-  await page.waitForTimeout(600);
-  await expect(page.getByLabel("Slide 2 dari 5")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Jelajahi aset dari BPRS" })).toBeVisible();
+  // Scope to the accessible carousel, excluding transient hidden streamed markup.
+  const carousel = page.getByRole("region", { name: "Jelajahi aset", exact: true });
+  await expect(carousel).toHaveCount(1);
+  await expect(page.getByRole("banner").getByRole("search")).toBeVisible();
+  await expect(carousel.getByRole("button", { name: "Tampilkan aset 1", exact: true })).toHaveAttribute("aria-current", "true");
+  await carousel.getByRole("button", { name: "Aset berikutnya" }).click();
+  await expect(carousel.getByRole("button", { name: "Tampilkan aset 2", exact: true })).toHaveAttribute("aria-current", "true");
+  await expect(carousel.getByRole("button", { name: "Putar carousel" })).toBeVisible();
+  await page.mouse.move(0, 0); await page.waitForTimeout(6500);
+  await expect(carousel.getByRole("button", { name: "Tampilkan aset 2", exact: true })).toHaveAttribute("aria-current", "true");
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  await page.reload();
+  await expect(carousel.getByRole("button", { name: /(?:Jeda|Putar) carousel/ })).toHaveCount(0);
+  await carousel.getByRole("button", { name: "Aset berikutnya" }).click();
+  await expect(carousel.getByRole("button", { name: "Tampilkan aset 2", exact: true })).toHaveAttribute("aria-current", "true");
+  await page.mouse.move(0, 0); await page.waitForTimeout(6500);
+  await expect(carousel.getByRole("button", { name: "Tampilkan aset 2", exact: true })).toHaveAttribute("aria-current", "true");
   expect(errors).toEqual([]);
 });
 
-test("katalog membuka quick view, mengunci scroll, dan mengembalikan fokus", async ({ page }) => {
+test("katalog memakai satu jalur detail aset tanpa quick view kedua", async ({ page }) => {
   const errors = captureRuntimeErrors(page);
   await page.goto("/katalog");
-  const opener = page.getByRole("button", { name: "Lihat ringkas" }).first();
-  await expect(opener).toBeVisible();
-  await opener.click();
-  await expect(page.getByRole("dialog")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Lihat ringkas" })).toHaveCount(0);
+  const detail = page.getByRole("link", { name: /^Lihat detail/ }).first();
+  await expect(detail).toHaveAttribute("href", "/aset/sj-test0001?returnTo=%2Fkatalog");
+  await detail.click();
   await expect(page.getByRole("heading", { name: "Rumah tinggal dekat pusat kota" })).toBeVisible();
-  await expect.poll(() => page.evaluate(() => getComputedStyle(document.body).overflow)).toBe("hidden");
-  await expect.poll(() => page.evaluate(() => document.body.getAttribute("data-scroll-locked"))).toBe("1");
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("dialog")).toBeHidden();
-  await expect(opener).toBeFocused();
+  // A heading can be present yet stranded above the viewport after smooth route scrolling.
+  await expect(page.getByRole("heading", { name: "Rumah tinggal dekat pusat kota" })).toBeInViewport({ ratio: 1 });
   expect(errors).toEqual([]);
 });
 
@@ -67,7 +76,8 @@ test("kegagalan API menjadi state Indonesia tanpa data katalog palsu", async ({ 
   const errors = captureRuntimeErrors(page);
   await page.goto("/katalog?q=__api-failure__");
   await expect(page.getByRole("heading", { name: "Katalog belum dapat dimuat." })).toBeVisible();
-  await expect(page.getByText("Tidak ada aset contoh yang digunakan sebagai pengganti.", { exact: false })).toBeVisible();
+  await expect(page.getByText("Jumlah aset belum tersedia.", { exact: true })).toBeVisible();
+  await expect(page.locator('[data-asset-card]')).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Lihat ringkas" })).toHaveCount(0);
   expect(errors).toEqual([]);
 });

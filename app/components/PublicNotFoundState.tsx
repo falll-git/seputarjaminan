@@ -1,9 +1,6 @@
-import {
-  ArrowRight,
-  Buildings,
-  Compass,
-  HouseLine,
-} from "@phosphor-icons/react/dist/ssr";
+import { ArrowRight } from "@phosphor-icons/react/dist/ssr";
+import StateIllustration from "./StateIllustration";
+import styles from "./StateIllustration.module.css";
 import Link from "next/link";
 import SiteFooter from "./SiteFooter";
 import SiteHeader from "./SiteHeader";
@@ -20,7 +17,6 @@ const missingCopy = {
     primaryLabel: "Kembali ke beranda",
     secondaryHref: "/katalog",
     secondaryLabel: "Buka katalog",
-    icon: Compass,
   },
   asset: {
     label: "Aset tidak tersedia",
@@ -31,7 +27,6 @@ const missingCopy = {
     primaryLabel: "Kembali ke katalog",
     secondaryHref: "/bprs",
     secondaryLabel: "Lihat BPRS penerbit",
-    icon: HouseLine,
   },
   bprs: {
     label: "Penerbit tidak tersedia",
@@ -42,22 +37,20 @@ const missingCopy = {
     primaryLabel: "Kembali ke direktori",
     secondaryHref: "/katalog",
     secondaryLabel: "Buka katalog",
-    icon: Buildings,
   },
 } as const;
 
 export default function PublicNotFoundState({ kind }: { kind: MissingKind }) {
   const copy = missingCopy[kind];
-  const Icon = copy.icon;
 
   return (
     <>
       <SiteHeader />
       <main className={`not-found-page not-found-page--${kind}`}>
         <section className="not-found-stage" aria-labelledby="not-found-title">
-          <div className="not-found-index" aria-hidden="true">
+          <div className={`not-found-index ${styles.errorIndex}`} aria-hidden="true">
             <strong>404</strong>
-            <Icon />
+            <StateIllustration scene="missing" />
             <span>{copy.index}</span>
           </div>
           <div className="not-found-copy">

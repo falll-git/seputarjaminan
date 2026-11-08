@@ -1,21 +1,21 @@
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import {
-  ArrowLeft,
   ArrowRight,
   ArrowUpRight,
   Buildings,
-  CalendarBlank,
   MapPin,
-  SealCheck,
-  WhatsappLogo,
 } from "@phosphor-icons/react/dist/ssr";
 import AssetDetailGallery from "../../components/AssetDetailGallery";
+import CatalogReturnLink from "../../components/CatalogReturnLink";
 import PublicDataState from "../../components/PublicDataState";
 import SiteFooter from "../../components/SiteFooter";
 import SiteHeader from "../../components/SiteHeader";
 import BprsMark from "../../components/BprsMark";
-import PublicMedia from "../../components/PublicMedia";
+import AssetCard from "../../components/AssetCard";
+import AssetContact from "../../components/AssetContact";
+import { SectionHeading, StatusBadge, TextLink } from "../../components/ui";
+import styles from "./detail.module.css";
 import type { AssetDetail } from "../../data/catalog";
 import { formatPublicDate, toAsset, toAssetDetail, toBprsProfile } from "../../data/catalog";
 import {
@@ -31,6 +31,7 @@ export const dynamic = "force-dynamic";
 
 type AssetPageProps = {
   params: Promise<{ slug: string }>;
+  searchParams?: Promise<{ returnTo?: string | string[] }>;
 };
 
 export async function generateMetadata({ params }: AssetPageProps): Promise<Metadata> {
@@ -53,7 +54,9 @@ export async function generateMetadata({ params }: AssetPageProps): Promise<Meta
   }
 }
 
-export default async function AssetPage({ params }: AssetPageProps) {
+export default async function AssetPage({ params, searchParams }: AssetPageProps) {
+  const returnValue = (await searchParams)?.returnTo;
+  const returnTo = Array.isArray(returnValue) ? returnValue[0] : returnValue;
   const { slug } = await params;
   const referenceCode = referenceCodeFromSlug(slug);
   if (!referenceCode) notFound();
@@ -67,7 +70,9 @@ export default async function AssetPage({ params }: AssetPageProps) {
       <>
         <SiteHeader />
         <main className="asset-detail-page site-frame page-data-state">
+          <CatalogReturnLink returnTo={returnTo} />
           <PublicDataState
+            headingLevel={1}
             kind={publicDataStateKind(error)}
             title={publicDataStateKind(error) === "timeout" ? "Detail aset memerlukan waktu lebih lama." : "Detail aset belum dapat dimuat."}
             message={publicDataStateKind(error) === "timeout" ? "Permintaan dihentikan setelah melewati batas waktu aman. Coba muat ulang halaman." : "Silakan coba kembali beberapa saat lagi."}
@@ -90,54 +95,40 @@ export default async function AssetPage({ params }: AssetPageProps) {
   return (
     <>
       <SiteHeader />
-      <main className="asset-detail-page">
-        <div className="site-frame asset-detail-back-row">
-          <a className="asset-detail-back" href="/katalog"><ArrowLeft aria-hidden="true" /> Kembali ke katalog</a>
-          <span>Indeks aset · {asset.id}</span>
+      <main className={styles.page}>
+        <div className={`site-frame ${styles.back}`}>
+          <CatalogReturnLink returnTo={returnTo} />
+          <span>{asset.id}</span>
         </div>
 
-        <article className="site-frame asset-detail-editorial">
-          <AssetDetailGallery assetId={asset.id} assetTitle={asset.title} images={asset.gallery} />
-
-          <aside className="asset-detail-information" aria-labelledby="asset-title">
-            <div className="asset-detail-heading">
-              <p className="asset-detail-kicker">{asset.categoryLabel} · {asset.subtype}</p>
-              <p className="asset-detail-status"><span aria-hidden="true" /> {asset.status}</p>
+        <article className={`site-frame ${styles.editorial}`}>
+            <header className={styles.heading}>
+              <div className={styles.eyebrow}><span>{asset.categoryLabel}{asset.subtype !== asset.categoryLabel && ` · ${asset.subtype}`}</span><StatusBadge>{asset.status}</StatusBadge></div>
               <h1 id="asset-title">{asset.title}</h1>
-              <p className="asset-detail-location"><MapPin aria-hidden="true" /> {asset.city}, {asset.province}</p>
-            </div>
-
-            <p className="asset-detail-lead">{asset.description}</p>
-
-            <section className="asset-contact-panel" aria-labelledby="asset-contact-heading">
-              <div>
-                <p>Informasi langsung dari BPRS</p>
-                <h2 id="asset-contact-heading">Tanyakan ketersediaan dan proses berikutnya.</h2>
-                <span>Tujuan pesan telah dipilih untuk publikasi ini oleh {asset.publisher.name}.</span>
+              <p className={styles.location}><MapPin aria-hidden="true" /> {asset.city}, {asset.province}</p>
+              <a className={styles.issuer} href={`/bprs/${asset.publisher.slug}`}>Dari {asset.publisher.name}</a>
+            </header>
+          <div className={styles.gallery}><AssetDetailGallery assetId={asset.id} assetTitle={asset.title} images={asset.gallery} /></div>
+          <div className={styles.information}>
+            <section className={styles.contact} aria-labelledby="publisher-heading">
+              <div className={styles.publisher}>
+                <div className={styles.mark}><BprsMark profile={asset.publisher} compact /></div>
+                <div><p>BPRS penerbit</p><h2 id="publisher-heading">{asset.publisher.name}</h2>
+                  {publisher && <p className={styles.office}><Buildings aria-hidden="true" />{publisher.city}, {publisher.province}</p>}
+                </div>
               </div>
-              <a className="asset-whatsapp-cta" href={asset.whatsappUrl} target="_blank" rel="noreferrer">
-                <WhatsappLogo aria-hidden="true" />
-                <span>Tanyakan aset ini</span>
-                <ArrowUpRight aria-hidden="true" />
-              </a>
+              <TextLink href={`/bprs/${asset.publisher.slug}`}>Lihat profil BPRS <ArrowUpRight aria-hidden="true" /></TextLink>
+              <p className={styles.contactNote}>Untuk informasi lanjutan, hubungi BPRS melalui WhatsApp.</p>
+              <AssetContact configuredUrl={asset.whatsappUrl} title={asset.title} reference={asset.id} publisherName={asset.publisher.name} />
             </section>
 
-            <a className="asset-mobile-whatsapp" href={asset.whatsappUrl} target="_blank" rel="noreferrer">
-              <WhatsappLogo aria-hidden="true" />
-              <span>Tanyakan aset ini</span>
-              <ArrowUpRight aria-hidden="true" />
-            </a>
-
             {asset.specs.length > 0 && (
-              <section className="asset-specification-section" aria-labelledby="asset-specification-heading">
-                <div className="asset-detail-section-heading">
-                  <h2 id="asset-specification-heading">Informasi utama</h2>
-                  <span>{asset.specs.length} spesifikasi</span>
-                </div>
-                <dl className="asset-detail-specs">
-                  {asset.specs.map((spec, index) => (
+              <section className={styles.section} aria-labelledby="asset-specification-heading">
+                <h2 id="asset-specification-heading">Spesifikasi</h2>
+                <dl className={styles.specs}>
+                  {asset.specs.map((spec) => (
                     <div key={spec.label}>
-                      <dt>{String(index + 1).padStart(2, "0")} · {spec.label}</dt>
+                      <dt>{spec.label}</dt>
                       <dd>{spec.value}</dd>
                     </div>
                   ))}
@@ -145,68 +136,31 @@ export default async function AssetPage({ params }: AssetPageProps) {
               </section>
             )}
 
-            <section className="asset-publisher" aria-labelledby="publisher-heading">
-              <div className="asset-publisher-mark">
-                <BprsMark profile={asset.publisher} compact />
-              </div>
-              <div className="asset-publisher-copy">
-                <p id="publisher-heading">Dipublikasikan oleh</p>
-                <h2>{asset.publisher.name}</h2>
-                <span><Buildings aria-hidden="true" /> {publisher ? `${publisher.city}, ${publisher.province}` : "Profil BPRS penerbit"}</span>
-              </div>
-              <a href={`/bprs/${asset.publisher.slug}`} aria-label={`Buka profil ${asset.publisher.name}`}><ArrowUpRight aria-hidden="true" /></a>
+            <section className={styles.section} aria-labelledby="asset-description-heading">
+              <h2 id="asset-description-heading">Tentang aset</h2>
+              <p className={styles.description}>{asset.description}</p>
             </section>
-
-            <section className="asset-publication-note" aria-labelledby="asset-publication-note-heading">
-              <div className="asset-detail-update">
-                <CalendarBlank aria-hidden="true" />
-                <span>Diperbarui {formatPublicDate(asset.updatedAt)}</span>
-                <i aria-hidden="true" />
-                <span>Referensi {asset.id}</span>
-              </div>
-
-              <div className="asset-detail-verification">
-                <SealCheck aria-hidden="true" />
-                <p id="asset-publication-note-heading"><strong>Konfirmasi sebelum melanjutkan.</strong> Harga, ketersediaan, dokumen, dan proses berikutnya diberikan langsung oleh BPRS penerbit melalui WhatsApp.</p>
-              </div>
-            </section>
-          </aside>
+            <div className={styles.note}>
+              <p>Diperbarui {formatPublicDate(asset.updatedAt)} · {asset.id}</p>
+              <p>Konfirmasikan ketersediaan, dokumen, dan proses berikutnya langsung kepada BPRS penerbit.</p>
+            </div>
+          </div>
         </article>
 
         {relatedAssets.length > 0 && (
-          <section className="site-frame related-assets" aria-labelledby="related-assets-title">
-            <div className="related-assets-heading">
-              <div>
-                <p>Indeks lanjutan</p>
-                <h2 id="related-assets-title">Aset terkait</h2>
-              </div>
-              <a href={`/katalog?category=${asset.category}`}>Lihat kategori {asset.categoryLabel} <ArrowRight aria-hidden="true" /></a>
+          <section className={`site-frame ${styles.related}`} aria-labelledby="related-assets-title">
+            <div className={styles.relatedHeading}>
+              <SectionHeading id="related-assets-title">Aset terkait</SectionHeading>
+              <TextLink href={`/katalog?category=${asset.category}`}>Lihat kategori {asset.categoryLabel} <ArrowRight aria-hidden="true" /></TextLink>
             </div>
-            <div className="related-assets-grid">
-              {relatedAssets.map((related, index) => (
-                <article className="related-asset" key={related.id}>
-                  <a className="related-asset-image" href={`/aset/${related.slug}`}>
-                    <PublicMedia
-                      src={related.cover.url}
-                      alt={related.cover.altText}
-                      width={related.cover.width}
-                      height={related.cover.height}
-                      sizes="(max-width: 760px) 100vw, 33vw"
-                    />
-                    <span className="related-asset-index">{String(index + 1).padStart(2, "0")}</span>
-                  </a>
-                  <div className="related-asset-copy">
-                    <p>{related.id} · {related.city}, {related.province}</p>
-                    <h3><a href={`/aset/${related.slug}`}>{related.title}</a></h3>
-                    <span>{related.publisher.name}</span>
-                  </div>
-                </article>
-              ))}
+            <div className={styles.relatedGrid}>
+              {relatedAssets.map((related) => <AssetCard key={related.id} asset={related} />)}
             </div>
           </section>
         )}
       </main>
-      <SiteFooter />
+      <SiteFooter compact />
+      <AssetContact mobile configuredUrl={asset.whatsappUrl} title={asset.title} reference={asset.id} publisherName={asset.publisher.name} />
     </>
   );
 }

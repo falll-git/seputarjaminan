@@ -9,6 +9,8 @@ import tseslint from "typescript-eslint";
 
 const eslintConfig = defineConfig([
   globalIgnores([
+    // Reviewed third-party source is verified/tested separately, not rewritten.
+    "vendor/braces-depth-guard/**",
     ".next/**",
     "dist/**",
     "**/dist/**",
@@ -16,6 +18,8 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Local CLI audit expressions and migration scratch files are not modules.
+    "work/**",
   ]),
   eslint.configs.recommended,
   ...tseslint.configs.recommended,

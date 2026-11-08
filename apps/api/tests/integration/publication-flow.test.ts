@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { generateKeyPairSync, randomUUID } from "node:crypto";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, rm, realpath } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -17,7 +17,9 @@ import {
 import { FilesystemStorageAdapter } from "@seputarjaminan/storage";
 import { createApp } from "../../src/app.js";
 import { createDatabaseClients } from "../../src/database.js";
-import { AllowAllRateLimiter } from "../../src/rate-limit.js";
+import { AllowAllRateLimiter, RedisFixedWindowRateLimiter } from "../../src/rate-limit.js";
+import { verifyRealLocalServices } from "./real-local-services.js";
+import { verifyDisposableDatabase } from "./disposable-target.js";
 import { createWorkerDatabase } from "../../../worker/src/database.js";
 import { createMalwareScanner } from "../../../worker/src/malware-scanner.js";
 import { CentralWorker } from "../../../worker/src/worker.js";
@@ -96,11 +98,39 @@ test("alur nyata upload, proses, publish, baca publik, replay, dan unpublish", {
 }, async (context) => {
   const owner = new Client({ connectionString: ownerUrl! });
   await owner.connect();
-  await clearInstitution(owner);
-  const storageRoot = await mkdtemp(path.join(os.tmpdir(), "sj-flow-"));
+  let realServices;
+  try { await verifyDisposableDatabase(owner); realServices = await verifyRealLocalServices(owner); }
+  catch (error) { await owner.end(); throw error; }
+  try {
+    assert.equal((await owner.query("SELECT count(*)::int n FROM institutions WHERE id=$1", [institutionId])).rows[0].n, 0, "Existing fixture requires explicit recovery, not pre-test deletion");
+  } catch (error) { await owner.end(); throw error; }
+  const storageBase = await realpath(realServices?.storageBase ?? os.tmpdir());
+  const storageRoot = await mkdtemp(path.join(storageBase, "sj-flow-"));
   const storage = new FilesystemStorageAdapter({ root: storageRoot });
   const { publicKey, privateKey } = generateKeyPairSync("ed25519");
   const publicPem = publicKey.export({ type: "spki", format: "pem" }).toString();
+  const databases = createDatabaseClients({
+    registryDatabaseUrl: registryUrl!,
+    ingestDatabaseUrl: ingestUrl!,
+    publicDatabaseUrl: publicUrl!,
+    opsDatabaseUrl: opsUrl!,
+  });
+  const workerDatabase = createWorkerDatabase(workerUrl!);
+  const ingestLimiter = realServices ? new RedisFixedWindowRateLimiter(realServices.redisUrl) : new AllowAllRateLimiter();
+  const publicLimiter = realServices ? new RedisFixedWindowRateLimiter(realServices.redisUrl) : new AllowAllRateLimiter();
+  context.after(async () => {
+    if (ingestLimiter instanceof RedisFixedWindowRateLimiter) await ingestLimiter.disconnect();
+    if (publicLimiter instanceof RedisFixedWindowRateLimiter) await publicLimiter.disconnect();
+    await databases.disconnect();
+    await workerDatabase.$disconnect();
+    await clearInstitution(owner);
+    await owner.end();
+    assert.equal(path.dirname(await realpath(storageRoot)), storageBase);
+    assert.ok(path.basename(storageRoot).startsWith("sj-flow-"));
+    await rm(storageRoot, { recursive: true });
+  });
+
+  // Register scoped cleanup before the first write, including partial setup.
   await owner.query(
     `INSERT INTO institutions (id, legal_name_internal, public_slug, state, onboarded_at, created_at, updated_at)
      VALUES ($1, 'BPRS Alur Sintetis', 'bprs-alur-sintetis', 'ACTIVE', now(), now(), now())`,
@@ -119,23 +149,8 @@ test("alur nyata upload, proses, publish, baca publik, replay, dan unpublish", {
     [keyId, institutionId, installationId, publicPem],
   );
 
-  const databases = createDatabaseClients({
-    registryDatabaseUrl: registryUrl!,
-    ingestDatabaseUrl: ingestUrl!,
-    publicDatabaseUrl: publicUrl!,
-    opsDatabaseUrl: opsUrl!,
-  });
-  const workerDatabase = createWorkerDatabase(workerUrl!);
-  context.after(async () => {
-    await databases.disconnect();
-    await workerDatabase.$disconnect();
-    await clearInstitution(owner);
-    await owner.end();
-    await rm(storageRoot, { recursive: true, force: true });
-  });
-
   const config = {
-    nodeEnv: "test",
+    nodeEnv: realServices ? "development" : "test",
     publicApiBaseUrl: "http://127.0.0.1:4100",
     publicMediaBaseUrl: "http://127.0.0.1:4100/v1/public/media",
     uploadSessionTtlSeconds: 300,
@@ -154,14 +169,18 @@ test("alur nyata upload, proses, publish, baca publik, replay, dan unpublish", {
     config,
     databases,
     storage,
-    ingestLimiter: new AllowAllRateLimiter(),
-    publicLimiter: new AllowAllRateLimiter(),
+    ingestLimiter,
+    publicLimiter,
     logger: pino({ level: "silent" }),
   });
+  const scanner = createMalwareScanner(realServices
+    ? { mode: "CLAMAV", command: "clamdscan", dockerContainer: realServices.dockerContainer }
+    : { mode: "TEST_SAFE", command: "unused" });
+  await scanner.verifyReady();
   const worker = new CentralWorker(
     workerDatabase,
     storage as any,
-    createMalwareScanner({ mode: "TEST_SAFE", command: "unused" }),
+    scanner,
     pino({ level: "silent" }),
     10_485_760,
   );
@@ -283,6 +302,10 @@ test("alur nyata upload, proses, publish, baca publik, replay, dan unpublish", {
   assert.equal(publicAsset.body.institution.public_name, "BPRS Alur Sintetis");
   assert.equal(publicAsset.body.availability, "AVAILABLE");
   assert.equal(publicAsset.body.photo_count, 1);
+  const publicImage = await request(app).get(new URL(publicAsset.body.media[0].url).pathname);
+  assert.equal(publicImage.status, 200);
+  assert.match(publicImage.headers["content-type"], /image\/webp/);
+  assert.ok(publicImage.body.length > 0);
   assert.match(publicAsset.body.whatsapp_url, /^https:\/\/wa\.me\/628111111111\?text=/u);
   assert.match(decodeURIComponent(publicAsset.body.whatsapp_url), /SJ-TEST0001 — Rumah tinggal dua lantai/u);
   assert.equal("price" in publicAsset.body, false);
@@ -306,4 +329,18 @@ test("alur nyata upload, proses, publish, baca publik, replay, dan unpublish", {
   const unpublished = await signedPost(app, "/v1/ingest/events", event("UNPUBLISH_PUBLICATION", publicationId, 2, unpublishPayload), privateKey);
   assert.equal(unpublished.status, 200);
   assert.equal((await request(app).get("/v1/public/assets/SJ-TEST0001")).status, 404);
+
+  const hideProfilePayload = {
+    institution_id: institutionId,
+    reason_code: "PROFILE_REMOVED",
+    hidden_at: new Date().toISOString(),
+  };
+  const hidden = await signedPost(
+    app,
+    "/v1/ingest/events",
+    event("HIDE_BPRS_PROFILE", institutionId, 2, hideProfilePayload),
+    privateKey,
+  );
+  assert.equal(hidden.status, 200, JSON.stringify(hidden.body));
+  assert.equal((await request(app).get("/v1/public/institutions/bprs-alur-sintetis")).status, 404);
 });

@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import fs from "node:fs";
-import { mkdir, open, rename, stat, statfs, unlink } from "node:fs/promises";
+import { mkdir, open, rename, stat, statfs, unlink, readdir, lstat } from "node:fs/promises";
 import path from "node:path";
 import { Readable, Transform } from "node:stream";
 import { pipeline } from "node:stream/promises";
@@ -25,12 +25,12 @@ export class FilesystemStorageAdapter {
     this.stopFreeBytes = stopFreeBytes;
   }
 
-  async assertWritableCapacity() {
+  async assertWritableCapacity(incomingBytes = 0) {
     await mkdir(this.root, { recursive: true });
     if (!this.stopFreeBytes) return;
     const info = await statfs(this.root);
     const availableBytes = Number(info.bavail) * Number(info.bsize);
-    if (availableBytes <= this.stopFreeBytes) {
+    if (availableBytes - incomingBytes <= this.stopFreeBytes) {
       const error = new Error("Storage tidak memiliki ruang aman untuk upload baru.");
       error.code = "STORAGE_CAPACITY_GUARD";
       throw error;
@@ -38,7 +38,7 @@ export class FilesystemStorageAdapter {
   }
 
   async putObject(logicalKey, body, { maxBytes, expectedSha256 } = {}) {
-    await this.assertWritableCapacity();
+    await this.assertWritableCapacity(maxBytes ?? (Buffer.isBuffer(body) ? body.length : 0));
     const target = resolveInsideRoot(this.root, logicalKey);
     await mkdir(path.dirname(target), { recursive: true });
     const temporary = target + ".upload-" + randomUUID();
@@ -109,5 +109,22 @@ export class FilesystemStorageAdapter {
       throw new Error("Penghapusan otomatis hanya diizinkan untuk object temporary atau failed.");
     }
     await unlink(resolveInsideRoot(this.root, logicalKey));
+  }
+
+  async cleanupTransientWrites(logicalKey, before) {
+    const target = resolveInsideRoot(this.root, logicalKey);
+    const directory = path.dirname(target), prefix = path.basename(target) + ".upload-";
+    let entries;
+    try { entries = await readdir(directory); } catch (error) { if (error.code === "ENOENT") return 0; throw error; }
+    let removed = 0;
+    for (const name of entries) {
+      if (!name.startsWith(prefix) || !/^[a-f0-9]{8}(?:-[a-f0-9]{4}){3}-[a-f0-9]{12}$/i.test(name.slice(prefix.length))) continue;
+      const file = path.join(directory, name);
+      try {
+        const info = await lstat(file);
+        if (info.isFile() && info.mtime < before) { await unlink(file); removed++; }
+      } catch (error) { if (error.code !== "ENOENT") throw error; }
+    }
+    return removed;
   }
 }

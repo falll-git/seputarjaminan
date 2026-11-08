@@ -1,9 +1,11 @@
+import { randomInt } from "node:crypto";
 import {
   PUBLICATION_CATEGORIES,
   PUBLIC_ATTRIBUTE_VOCABULARIES,
 } from "@seputarjaminan/contracts";
 import type { DatabaseClients } from "./database.js";
 import { ApiError } from "./errors.js";
+import { assertQueryKeys, cursorScope, decodePublicCursor, encodePublicCursor, normalizeLocation } from "./public-query.js";
 
 const MESSAGE_TEMPLATE = "Siang Pak/Bu, saya ingin mengetahui informasi lebih lanjut terkait aset {reference_code} — {asset_title}.";
 const VALID_CATEGORIES = new Set(Object.keys(PUBLICATION_CATEGORIES));
@@ -32,61 +34,25 @@ function normalizeSearch(value?: string) {
   return value?.normalize("NFKC").toLocaleLowerCase("id-ID");
 }
 
-function encodeCursor(value: { updatedAt: Date; id: string }) {
-  return Buffer.from(JSON.stringify({
-    updated_at: value.updatedAt.toISOString(),
-    id: value.id,
-  }), "utf8").toString("base64url");
-}
-
-function decodeCursor(value?: string) {
-  if (!value) return null;
-  try {
-    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-    const updatedAt = new Date(parsed.updated_at);
-    if (!parsed.id || Number.isNaN(updatedAt.getTime())) throw new Error("invalid");
-    return { updatedAt, id: String(parsed.id) };
-  } catch {
-    throw new ApiError(400, "CURSOR_INVALID", "Halaman katalog tidak valid. Silakan mulai dari awal.");
-  }
-}
-
-function encodeInstitutionCursor(publicSlug: string) {
-  return Buffer.from(JSON.stringify({ public_slug: publicSlug }), "utf8").toString("base64url");
-}
-
-function decodeInstitutionCursor(value?: string) {
-  if (!value) return undefined;
-  try {
-    const parsed = JSON.parse(Buffer.from(value, "base64url").toString("utf8"));
-    if (typeof parsed.public_slug !== "string" || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(parsed.public_slug)) {
-      throw new Error("invalid");
-    }
-    return parsed.public_slug as string;
-  } catch {
-    throw new ApiError(400, "CURSOR_INVALID", "Halaman BPRS penerbit tidak valid. Silakan mulai dari awal.");
-  }
-}
-
 function publicMediaUrl(baseUrl: string, mediaId: string) {
   return baseUrl.replace(/\/$/, "") + "/" + mediaId;
 }
 
-function attributesFor(publication: any) {
-  if (publication.landDetail) {
+function attributesFor(publication: any): Record<string, string | number> {
+  if (publication.category === "TANAH" && publication.landDetail) {
     return {
       land_area_m2: Number(publication.landDetail.landAreaM2),
       ...(publication.landDetail.contour ? { contour: publication.landDetail.contour } : {}),
       ...(publication.landDetail.roadAccess ? { road_access: publication.landDetail.roadAccess } : {}),
     };
   }
-  if (publication.buildingDetail) {
+  if (publication.category === "BANGUNAN" && publication.buildingDetail) {
     return {
-      ...(publication.buildingDetail.landAreaM2
+      ...(publication.buildingDetail.landAreaM2 != null
         ? { land_area_m2: Number(publication.buildingDetail.landAreaM2) }
         : {}),
       building_area_m2: Number(publication.buildingDetail.buildingAreaM2),
-      ...(publication.buildingDetail.floorCount
+      ...(publication.buildingDetail.floorCount != null
         ? { floor_count: publication.buildingDetail.floorCount }
         : {}),
       ...(publication.buildingDetail.publicUsage
@@ -94,13 +60,13 @@ function attributesFor(publication: any) {
         : {}),
     };
   }
-  if (publication.machineDetail) {
+  if (publication.category === "MESIN_PERALATAN" && publication.machineDetail) {
     return {
       ...(publication.machineDetail.brandOrManufacturer
         ? { brand_or_manufacturer: publication.machineDetail.brandOrManufacturer }
         : {}),
       model_or_type: publication.machineDetail.modelOrType,
-      ...(publication.machineDetail.manufactureYear
+      ...(publication.machineDetail.manufactureYear != null
         ? { manufacture_year: publication.machineDetail.manufactureYear }
         : {}),
       ...(publication.machineDetail.publicCapacity
@@ -109,10 +75,11 @@ function attributesFor(publication: any) {
       public_condition: publication.machineDetail.publicCondition,
     };
   }
+  if (publication.category !== "KENDARAAN" || !publication.vehicleDetail) return {};
   return {
     brand: publication.vehicleDetail.brand,
     model_or_type: publication.vehicleDetail.modelOrType,
-    ...(publication.vehicleDetail.manufactureYear
+    ...(publication.vehicleDetail.manufactureYear != null
       ? { manufacture_year: publication.vehicleDetail.manufactureYear }
       : {}),
     ...(publication.vehicleDetail.transmission
@@ -121,14 +88,14 @@ function attributesFor(publication: any) {
     ...(publication.vehicleDetail.fuelType
       ? { fuel_type: publication.vehicleDetail.fuelType }
       : {}),
-    ...(publication.vehicleDetail.mileageKm
+    ...(publication.vehicleDetail.mileageKm != null
       ? { mileage_km: Number(publication.vehicleDetail.mileageKm) }
       : {}),
     public_condition: publication.vehicleDetail.publicCondition,
   };
 }
 
-function visibilityWhere(now: Date) {
+export function visibilityWhere(now: Date) {
   return {
     state: "PUBLISHED" as const,
     availability: "AVAILABLE" as const,
@@ -162,6 +129,7 @@ export class PublicService {
     private databases: DatabaseClients,
     private storage: any,
     private mediaBaseUrl: string,
+    private websiteOrigin?: string,
   ) {}
 
   private card(publication: any) {
@@ -189,25 +157,43 @@ export class PublicService {
       availability: publication.availability,
       photo_count: publication.media.length,
       public_updated_at: publication.publicUpdatedAt.toISOString(),
+      summary_attributes: this.summaryAttributes(publication),
     };
   }
 
+  private summaryAttributes(publication: any) {
+    const keys: Record<string, string[]> = {
+      TANAH: ["land_area_m2"], BANGUNAN: ["land_area_m2", "building_area_m2"],
+      MESIN_PERALATAN: ["brand_or_manufacturer", "model_or_type"],
+      KENDARAAN: ["model_or_type", "mileage_km"],
+    };
+    const attributes = attributesFor(publication) as Record<string, string | number>;
+    return Object.fromEntries((keys[publication.category] ?? [])
+      .filter(key => attributes[key] != null).map(key => [key, attributes[key]]));
+  }
+
   async listAssets(query: Record<string, unknown>) {
+    assertQueryKeys(query, ["limit", "sort", "cursor", "category", "subcategory", "province", "city_regency", "institution", "q"]);
     const limit = queryLimit(query);
     const sort = queryText(query, "sort", 10);
     if (sort && !["NEWEST", "OLDEST"].includes(sort)) throw new ApiError(400, "SORT_INVALID", "Urutan katalog tidak valid.");
     const direction = sort === "OLDEST" ? "asc" : "desc";
     const cursorValue = queryText(query, "cursor", 1000);
-    const cursor = decodeCursor(cursorValue);
     const category = queryText(query, "category", 40);
     if (category && !VALID_CATEGORIES.has(category)) throw new ApiError(400, "CATEGORY_INVALID", "Kategori aset tidak valid.");
     const subcategory = queryText(query, "subcategory", 60);
     if (subcategory && !VALID_SUBCATEGORIES.has(subcategory)) throw new ApiError(400, "SUBCATEGORY_INVALID", "Subkategori aset tidak valid.");
-    const province = queryText(query, "province", 100);
-    const cityRegency = queryText(query, "city_regency", 100);
+    if (category && subcategory && !PUBLICATION_CATEGORIES[category].includes(subcategory)) {
+      throw new ApiError(400, "SUBCATEGORY_INVALID", "Subkategori tidak sesuai jenis aset.");
+    }
+    const province = normalizeLocation(queryText(query, "province", 100));
+    const cityRegency = normalizeLocation(queryText(query, "city_regency", 100));
     const institution = queryText(query, "institution", 100);
     if (institution && !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(institution)) throw new ApiError(400, "INSTITUTION_FILTER_INVALID", "Filter BPRS tidak valid.");
     const search = normalizeSearch(queryText(query, "q", 100));
+    const scope = cursorScope(["assets", sort ?? "NEWEST", category, subcategory, normalizeSearch(province), normalizeSearch(cityRegency), institution, search]);
+    const position = decodePublicCursor(cursorValue, scope, "asset");
+    const cursor = position ? { id: position.id, updatedAt: new Date(position.updated_at) } : null;
     const now = new Date();
     const cursorWhere = cursor
       ? direction === "desc"
@@ -230,8 +216,8 @@ export class PublicService {
         ...cursorWhere,
         ...(category ? { category: category as any } : {}),
         ...(subcategory ? { subcategoryCode: subcategory } : {}),
-        ...(province ? { province } : {}),
-        ...(cityRegency ? { cityRegency } : {}),
+        ...(province ? { province: { equals: province, mode: "insensitive" as const } } : {}),
+        ...(cityRegency ? { cityRegency: { equals: cityRegency, mode: "insensitive" as const } } : {}),
         ...(search ? { searchDocument: { normalizedText: { contains: search } } } : {}),
         ...(institution
           ? { institution: { state: "ACTIVE", publicSlug: institution } }
@@ -246,11 +232,35 @@ export class PublicService {
     const last = items.at(-1);
     return {
       items: items.map((row) => this.card(row)),
-      next_cursor: hasNext && last ? encodeCursor({ updatedAt: last.publicUpdatedAt, id: last.id }) : null,
+      next_cursor: hasNext && last ? encodePublicCursor(scope, { updated_at: last.publicUpdatedAt.toISOString(), id: last.id }) : null,
     };
   }
 
+  async showcase(query: Record<string, unknown>) {
+    assertQueryKeys(query, []);
+    // Sample the whole eligible population without loading every card. A bounded
+    // eight ID lookups plus a batch DTO read; no per-card detail HTTP requests.
+    return this.databases.publicRead.$transaction(async tx => {
+      const where = visibilityWhere(new Date());
+      const count = await tx.publication.count({ where });
+      const positions = new Map<number, number>();
+      const ids: string[] = [];
+      for (let index = 0; index < Math.min(8, count); index++) {
+        const remaining = count - index;
+        const draw = randomInt(remaining);
+        const offset = positions.get(draw) ?? draw;
+        positions.set(draw, positions.get(remaining - 1) ?? remaining - 1);
+        const [row] = await tx.publication.findMany({ where, orderBy: { id: "asc" }, skip: offset, take: 1, select: { id: true } });
+        if (row) ids.push(row.id);
+      }
+      const rows = ids.length ? await tx.publication.findMany({ where: { ...visibilityWhere(new Date()), id: { in: ids } }, include: publicInclude }) : [];
+      const byId = new Map(rows.map(row => [row.id, row]));
+      return { items: ids.flatMap(id => { const row = byId.get(id); return row ? [this.card(row)] : []; }), next_cursor: null };
+    }, { isolationLevel: "RepeatableRead", timeout: 4500 });
+  }
+
   async getAsset(referenceCode: string) {
+    if (!/^SJ-[A-Z0-9]{8}$/u.test(referenceCode)) throw new ApiError(404, "ASSET_NOT_FOUND", "Aset tidak tersedia.");
     const publication = await this.databases.publicRead.publication.findFirst({
       where: { publicReferenceCode: referenceCode, ...visibilityWhere(new Date()) },
       include: publicInclude,
@@ -262,6 +272,9 @@ export class PublicService {
     const phone = publication.whatsappContact.phoneE164.replace(/^\+/, "");
     return {
       ...this.card(publication),
+      // SJ applied event version, not the bank draft revision.
+      public_asset_version: publication.aggregateVersion,
+      public_page_url: this.websiteOrigin ? new URL(`/aset/${encodeURIComponent(publication.publicReferenceCode)}`, this.websiteOrigin).href : null,
       description: publication.description,
       attributes: attributesFor(publication),
       media: publication.media.map((item) => ({
@@ -275,10 +288,13 @@ export class PublicService {
   }
 
   async listInstitutions(query: Record<string, unknown>) {
+    assertQueryKeys(query, ["limit", "cursor", "q", "province"]);
     const limit = queryLimit(query);
-    const cursor = decodeInstitutionCursor(queryText(query, "cursor", 1000));
     const search = queryText(query, "q", 100);
-    const province = queryText(query, "province", 100);
+    const province = normalizeLocation(queryText(query, "province", 100));
+    const scope = cursorScope(["institutions", search?.toLocaleLowerCase("id-ID"), normalizeSearch(province)]);
+    const cursor = decodePublicCursor(queryText(query, "cursor", 1000), scope, "institution")?.public_slug;
+    const now = new Date();
     const rows = await this.databases.publicRead.institution.findMany({
       where: {
         state: "ACTIVE",
@@ -296,17 +312,22 @@ export class PublicService {
               }
             : {}),
         },
-        publications: { some: visibilityWhere(new Date()) },
+        publications: { some: visibilityWhere(now) },
       },
       orderBy: [{ publicSlug: "asc" }],
       take: limit + 1,
-      include: {
-        profile: true,
-        _count: { select: { publications: { where: visibilityWhere(new Date()) } } },
-      },
+      include: { profile: true },
     });
     const hasNext = rows.length > limit;
     const items = rows.slice(0, limit);
+    // Count only this bounded page in one batch. Including filtered counts in
+    // findMany caused repeated visibility aggregates before pagination in PG.
+    const counts = items.length ? await this.databases.publicRead.publication.groupBy({
+      by: ["institutionId"],
+      where: { ...visibilityWhere(now), institutionId: { in: items.map((item) => item.id) } },
+      _count: { _all: true },
+    }) : [];
+    const countByInstitution = new Map(counts.map((item) => [item.institutionId, item._count._all]));
     return {
       items: items.map((institution) => ({
         public_slug: institution.publicSlug,
@@ -315,13 +336,14 @@ export class PublicService {
         short_description: institution.profile!.shortDescription,
         office_city_regency: institution.profile!.officeCityRegency,
         office_province: institution.profile!.officeProvince,
-        published_asset_count: institution._count.publications,
+        published_asset_count: countByInstitution.get(institution.id) ?? 0,
       })),
-      next_cursor: hasNext && items.length > 0 ? encodeInstitutionCursor(items.at(-1)!.publicSlug) : null,
+      next_cursor: hasNext && items.length > 0 ? encodePublicCursor(scope, { public_slug: items.at(-1)!.publicSlug }) : null,
     };
   }
 
   async getInstitution(publicSlug: string) {
+    if (publicSlug.length > 100 || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/u.test(publicSlug)) throw new ApiError(404, "INSTITUTION_NOT_FOUND", "BPRS penerbit tidak tersedia.");
     const institution = await this.databases.publicRead.institution.findFirst({
       where: { publicSlug, state: "ACTIVE", profile: { state: "ACTIVE" } },
       include: {
@@ -340,6 +362,9 @@ export class PublicService {
       office_city_regency: institution.profile.officeCityRegency,
       office_province: institution.profile.officeProvince,
       published_asset_count: institution._count.publications,
+      // Source event version, not approval state or the bank's draft revision.
+      public_profile_version: institution.profile.sourceVersion,
+      public_page_url: this.websiteOrigin ? new URL(`/bprs/${encodeURIComponent(institution.publicSlug)}`, this.websiteOrigin).href : null,
     };
   }
 
@@ -351,22 +376,36 @@ export class PublicService {
     };
   }
 
-  async readMedia(mediaId: string) {
+  async readMedia(mediaId: string, query: Record<string, unknown> = {}) {
+    assertQueryKeys(query, ["variant"]);
+    const variant = queryText(query, "variant", 10) ?? "main";
+    if (!["main", "card", "thumb"].includes(variant)) throw new ApiError(400, "MEDIA_VARIANT_INVALID", "Ukuran gambar tidak dikenali.");
+    if (!/^[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}$/iu.test(mediaId)) throw new ApiError(404, "MEDIA_NOT_FOUND", "Gambar tidak tersedia.");
     const media = await this.databases.publicRead.mediaObject.findFirst({
       where: {
         id: mediaId,
         state: "READY",
         OR: [
-          { profileMarks: { some: { state: "ACTIVE" } } },
+          { profileMarks: { some: { state: "ACTIVE", institution: { state: "ACTIVE" } } } },
           { publicationMedia: { some: { publication: visibilityWhere(new Date()) } } },
         ],
       },
     });
     if (!media) throw new ApiError(404, "MEDIA_NOT_FOUND", "Gambar tidak tersedia.");
-    if (!media.deliveryObjectKey || !media.deliveryMime) {
+    const prefix = ["institutions", media.institutionId, "media", media.id].join("/");
+    if (media.deliveryObjectKey !== prefix + "/main" || media.deliveryMime !== "image/webp") {
       throw new ApiError(404, "MEDIA_NOT_READY", "Gambar belum siap ditampilkan.");
     }
-    const object = await this.storage.readObject(media.deliveryObjectKey);
-    return { ...object, contentType: media.deliveryMime };
+    // Older processed media can use their existing safe main derivative. Never
+    // substitute an original or hide a missing variant that was recorded ready.
+    const derivatives = media.derivativeMetadata as Record<string, unknown> | null;
+    const key = variant !== "main" && derivatives?.[variant] ? prefix + "/" + variant : media.deliveryObjectKey;
+    try {
+      const object = await this.storage.readObject(key);
+      return { ...object, contentType: media.deliveryMime };
+    } catch (error) {
+      if ((error as { code?: string }).code === "ENOENT") throw new ApiError(404, "MEDIA_NOT_FOUND", "Gambar tidak tersedia.");
+      throw new ApiError(503, "MEDIA_STORAGE_UNAVAILABLE", "Penyimpanan gambar belum tersedia.", { retryable: true });
+    }
   }
 }

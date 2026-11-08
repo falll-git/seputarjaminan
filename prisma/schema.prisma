@@ -163,6 +163,7 @@ model Institution {
   quarantines       QuarantineRecord[]
   reconciliations   ReconciliationRun[]
   centralJobs       CentralJob[]
+  controlRecoveryReceipts ControlRecoveryReceipt[] @relation("RecoveryInstitution")
 
   @@map("institutions")
 }
@@ -181,6 +182,9 @@ model InstitutionInstallation {
   keys                 InstitutionKey[]
   ingestEvents         IngestEvent[]
   reconciliations      ReconciliationRun[]
+  originatedMedia      MediaObject[]       @relation("MediaOriginInstallation")
+  originatedJobs       CentralJob[]        @relation("JobOriginInstallation")
+  controlRecoveryReceipts ControlRecoveryReceipt[] @relation("RecoveryInstallation")
 
   @@unique([institutionId, id])
   @@unique([institutionId, installationName])
@@ -375,6 +379,7 @@ model VehicleDetail {
 model MediaObject {
   id                  String               @id @default(uuid()) @db.Uuid
   institutionId       String               @map("institution_id") @db.Uuid
+  originInstallationId String?              @map("origin_installation_id") @db.Uuid
   sourceMediaId       String               @map("source_media_id") @db.Uuid
   sourcePublicationId String?              @map("source_publication_id") @db.Uuid
   logicalObjectKey    String               @map("logical_object_key")
@@ -400,6 +405,7 @@ model MediaObject {
   createdAt           DateTime             @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt           DateTime             @updatedAt @map("updated_at") @db.Timestamptz(3)
   institution         Institution          @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  originInstallation  InstitutionInstallation? @relation("MediaOriginInstallation", fields: [institutionId, originInstallationId], references: [institutionId, id], onDelete: Restrict, onUpdate: NoAction)
   profileMarks        BprsProfile[]        @relation("ProfilePublicMark")
   publicationMedia    PublicationMedia[]
   uploadSessions      MediaUploadSession[]
@@ -447,6 +453,7 @@ model MediaUploadSession {
 
 model IngestEvent {
   eventId          String                  @id @map("event_id") @db.Uuid
+  identityChecksum String?                 @map("identity_checksum") @db.Char(64)
   institutionId    String                  @map("institution_id") @db.Uuid
   installationId   String                  @map("installation_id") @db.Uuid
   keyId            String                  @map("key_id") @db.Uuid
@@ -546,20 +553,44 @@ model PublicSearchDocument {
 model CentralJob {
   id            String          @id @default(uuid()) @db.Uuid
   institutionId String?         @map("institution_id") @db.Uuid
+  originInstallationId String?  @map("origin_installation_id") @db.Uuid
   jobType       String          @map("job_type")
   dedupeKey     String          @unique @map("dedupe_key")
   payload       Json
   state         CentralJobState @default(PENDING)
   availableAt   DateTime        @default(now()) @map("available_at") @db.Timestamptz(3)
   leaseUntil    DateTime?       @map("lease_until") @db.Timestamptz(3)
+  leaseToken    String?         @map("lease_token") @db.Uuid
   attemptCount  Int             @default(0) @map("attempt_count")
   lastErrorCode String?         @map("last_error_code")
   createdAt     DateTime        @default(now()) @map("created_at") @db.Timestamptz(3)
   updatedAt     DateTime        @updatedAt @map("updated_at") @db.Timestamptz(3)
   institution   Institution?    @relation(fields: [institutionId], references: [id], onDelete: Restrict)
+  originInstallation InstitutionInstallation? @relation("JobOriginInstallation", fields: [institutionId, originInstallationId], references: [institutionId, id], onDelete: Restrict, onUpdate: NoAction)
+  controlRecoveryReceipts ControlRecoveryReceipt[]
 
   @@index([state, availableAt])
   @@map("central_jobs")
+}
+
+model ControlRecoveryReceipt {
+  requestId String @id @map("request_id") @db.Uuid
+  institutionId String @map("institution_id") @db.Uuid
+  installationId String @map("installation_id") @db.Uuid
+  controlInstanceId String @map("control_instance_id") @db.Uuid
+  operatorId String @map("operator_id") @db.Uuid
+  jobId String @map("job_id") @db.Uuid
+  bindingDigest String @map("binding_digest") @db.Char(64)
+  requestDigest String @map("request_digest") @db.Char(64)
+  previousAttemptCount Int @map("previous_attempt_count")
+  reason String
+  resultJson Json @map("result_json")
+  createdAt DateTime @default(dbgenerated("clock_timestamp()")) @map("created_at") @db.Timestamptz(6)
+  institution Institution @relation("RecoveryInstitution",fields:[institutionId],references:[id],onDelete:Restrict,onUpdate:NoAction)
+  installation InstitutionInstallation @relation("RecoveryInstallation",fields:[institutionId,installationId],references:[institutionId,id],onDelete:Restrict,onUpdate:NoAction)
+  job CentralJob @relation(fields:[jobId],references:[id],onDelete:Restrict,onUpdate:NoAction)
+  @@index([institutionId,installationId,jobId,createdAt],map:"control_recovery_receipts_job")
+  @@map("control_recovery_receipts")
 }
 
 model TaxonomyVersion {

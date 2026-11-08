@@ -56,6 +56,7 @@ export type Asset = {
   photoCount: number;
   updatedAt: string;
   cover: AssetMedia;
+  specs?: AssetSpec[];
 };
 
 export type AssetDetail = Asset & {
@@ -174,6 +175,9 @@ export function toAsset(card: PublicAssetCard): Asset {
     photoCount: card.photo_count,
     updatedAt: card.public_updated_at,
     cover: toMedia(card.cover),
+    specs: Object.entries(card.summary_attributes ?? {}).map(([key, value]) => ({
+      label: ATTRIBUTE_LABELS[key], value: formatAttributeValue(key, value),
+    })),
   };
 }
 

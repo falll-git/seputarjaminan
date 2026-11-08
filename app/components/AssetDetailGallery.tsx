@@ -1,12 +1,12 @@
 "use client";
 
 import { ArrowLeft, ArrowRight, ArrowsOut, ImageSquare } from "@phosphor-icons/react";
-import { AnimatePresence, motion, useReducedMotion } from "motion/react";
+import { useReducedMotion } from "motion/react";
 import PhotoSwipeLightbox from "photoswipe/lightbox";
 import { useEffect, useRef, useState } from "react";
 import type { AssetMedia } from "@/app/data/catalog";
-import { PUBLIC_MOTION_DURATION, PUBLIC_MOTION_EASE } from "@/app/lib/public-motion";
 import PublicMedia from "./PublicMedia";
+import PublicDataState from "./PublicDataState";
 
 type AssetDetailGalleryProps = {
   assetId: string;
@@ -64,9 +64,29 @@ export default function AssetDetailGallery({ assetId, assetTitle, images }: Asse
       if (lightbox.pswp) setActiveIndex(lightbox.pswp.currIndex);
     });
 
+    lightbox.on("bindEvents", () => {
+      lightbox.pswp?.element?.setAttribute("aria-modal", "true");
+      lightbox.pswp?.element?.setAttribute("aria-label", `Galeri foto ${assetTitle}`);
+    });
+
+    // Cycle at both ends: the library's focusin guard alone lets Tab briefly
+    // escape to browser chrome after its last control.
+    lightbox.on("keydown", (event) => {
+      const key = event.originalEvent;
+      const root = lightbox.pswp?.element;
+      if (key.key !== "Tab" || key.ctrlKey || key.altKey || key.metaKey || !root) return;
+      const controls = Array.from(root.querySelectorAll<HTMLElement>("button, a[href], input, select, textarea, [tabindex='0']"))
+        .filter((element) => element.getClientRects().length > 0 && getComputedStyle(element).visibility !== "hidden" && element.tabIndex >= 0 && !element.matches(":disabled"));
+      event.preventDefault();
+      key.preventDefault();
+      const index = controls.indexOf(document.activeElement as HTMLElement);
+      const next = key.shiftKey ? (index <= 0 ? controls.length - 1 : index - 1) : (index + 1) % controls.length;
+      (controls[next] ?? root).focus({ preventScroll: true });
+    });
+
     lightbox.on("closingAnimationEnd", () => {
       window.requestAnimationFrame(() => {
-        gallery.querySelector<HTMLElement>(".asset-gallery-slide.is-active")?.focus();
+        gallery.querySelector<HTMLElement>(".asset-gallery-slide.is-active")?.focus({ preventScroll: true });
       });
     });
 
@@ -91,7 +111,7 @@ export default function AssetDetailGallery({ assetId, assetTitle, images }: Asse
     return () => lightbox.destroy();
   }, [assetId, assetTitle, images, reducedMotion]);
 
-  if (!activeImage) return null;
+  if (!activeImage) return <section className="asset-gallery" aria-label={`Galeri visual ${assetTitle}`}><PublicDataState kind="empty" scene="photo" title="Foto aset belum tersedia." message="Informasi aset yang tersedia tetap dapat dibaca di halaman ini." /></section>;
 
   const showPrevious = () => setActiveIndex((index) => (index - 1 + images.length) % images.length);
   const showNext = () => setActiveIndex((index) => (index + 1) % images.length);
@@ -114,28 +134,30 @@ export default function AssetDetailGallery({ assetId, assetTitle, images }: Asse
                 aria-label={`Buka foto ${index + 1} dari ${images.length} pada layar penuh`}
                 aria-hidden={isActive ? undefined : true}
                 tabIndex={isActive ? 0 : -1}
+                onKeyDown={(event) => {
+                  if (images.length < 2 || !["ArrowLeft", "ArrowRight"].includes(event.key)) return;
+                  event.preventDefault();
+                  const next = (activeIndex + (event.key === "ArrowRight" ? 1 : -1) + images.length) % images.length;
+                  setActiveIndex(next);
+                  window.requestAnimationFrame(() => galleryRef.current?.querySelectorAll<HTMLElement>(".asset-gallery-slide")[next]?.focus({ preventScroll: true }));
+                }}
                 key={`${image.url}-${index}`}
               >
                 {isActive && (
-                  <AnimatePresence mode="wait" initial={false}>
-                    <motion.span
+                    <span
                       className="asset-gallery-image-frame"
                       key={`${image.url}-${index}`}
-                      initial={reducedMotion ? false : { opacity: 0, x: 16 }}
-                      animate={{ opacity: 1, x: 0 }}
-                      exit={reducedMotion ? undefined : { opacity: 0, x: -16 }}
-                      transition={{ duration: PUBLIC_MOTION_DURATION.standard, ease: PUBLIC_MOTION_EASE }}
                     >
                       <PublicMedia
+                        fit="contain"
                         src={image.url}
                         alt={image.altText}
                         width={image.width}
                         height={image.height}
-                        sizes="(max-width: 1100px) 100vw, 61vw"
+                        sizes="(max-width: 760px) 100vw, 55vw"
                         preload={index === 0}
                       />
-                    </motion.span>
-                  </AnimatePresence>
+                    </span>
                 )}
                 <span className="asset-gallery-expand"><ArrowsOut aria-hidden="true" /> <span>Buka layar penuh</span></span>
               </a>
@@ -143,7 +165,7 @@ export default function AssetDetailGallery({ assetId, assetTitle, images }: Asse
           })}
         </div>
 
-        <figcaption className="asset-gallery-caption">
+        <figcaption className="asset-gallery-caption" aria-live="polite" aria-atomic="true">
           <span className="asset-gallery-index"><strong>{assetId}</strong><span aria-hidden="true">·</span> visual {String(activeIndex + 1).padStart(2, "0")}</span>
           <span><ImageSquare aria-hidden="true" /> {String(activeIndex + 1).padStart(2, "0")} / {String(images.length).padStart(2, "0")}</span>
         </figcaption>
@@ -178,6 +200,7 @@ export default function AssetDetailGallery({ assetId, assetTitle, images }: Asse
                   width={image.width}
                   height={image.height}
                   sizes="128px"
+                  variant="thumb"
                   decorative
                   compact
                 />

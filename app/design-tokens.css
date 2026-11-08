@@ -1,0 +1,130 @@
+/* Source of truth for public UI values. Layout-specific dimensions stay in their owners.
+ * Legacy aliases below keep the existing page composition intact during migration. */
+:root, [data-preview-theme] {
+  color-scheme: light dark;
+  --color-background: light-dark(#F6F7F3, #151925);
+  --color-surface: light-dark(#FFFFFF, #222A3C);
+  --color-surface-elevated: light-dark(#FFFFFF, #2B354A);
+  --color-surface-subtle: light-dark(#EAEDE5, #293247);
+  --color-text: light-dark(#20283D, #EEF1F5);
+  --color-text-supporting: light-dark(#586176, #B7C0D0);
+  --color-placeholder: light-dark(#626B7C, #ABB6C9);
+  --color-action: light-dark(#343F72, #CBD6BF);
+  --color-action-hover: light-dark(#29335E, #DCE5D2);
+  --color-action-active: light-dark(#222B50, #B9C9AD);
+  --color-on-action: light-dark(#FFFFFF, #151925);
+  --color-link: light-dark(#343F72, #CDD6FF);
+  --color-link-hover: light-dark(#26315F, #E3E8FF);
+  --color-link-active: light-dark(#222B50, #B8C5F7);
+  --color-interactive-subtle: light-dark(#E8ECF5, #303C56);
+  --color-interactive-hover: light-dark(#DFE5F0, #384766);
+  --color-interactive-active: light-dark(#D3DCED, #435477);
+  --color-focus: light-dark(#343F72, #CBD6BF);
+  --color-disabled-surface: light-dark(#E6E9E2, #31394A);
+  --color-disabled-text: light-dark(#606A60, #BDC5D2);
+  --color-disabled-border: light-dark(#7A8376, #8590A4);
+  --color-border: light-dark(#DDE2D9, #3B465D);
+  --color-divider: var(--color-border);
+  --color-control-border: light-dark(#778273, #8D9AB0);
+  --color-scroll-thumb: light-dark(#778273, #8D9AB0);
+  --color-scroll-track: var(--color-background);
+  --color-accent-surface: #CBD6BF;
+  --color-on-accent: #20283D;
+  --color-status-available-surface: light-dark(#E7EEE2, #2E402F);
+  --color-status-available-text: light-dark(#3E5435, #D6E5C8);
+  --color-status-available-border: light-dark(#657D58, #90AA7E);
+  --color-status-error-surface: light-dark(#F9E9E7, #472D31);
+  --color-status-error-text: light-dark(#993B38, #FFC8C1);
+  --color-status-warning-surface: light-dark(#F4EEDC, #453A24);
+  --color-status-warning-text: light-dark(#715619, #F2D591);
+  --color-status-info-surface: light-dark(#E8ECF5, #303C56);
+  --color-status-info-text: light-dark(#343F72, #CDD6FF);
+  --color-media-placeholder: light-dark(#E3E7DE, #30394C);
+  --color-skeleton-highlight: light-dark(#F6F7F3, #414E65);
+  --color-shadow: rgb(21 25 37 / 0.14);
+  --color-shadow-strong: rgb(21 25 37 / 0.28);
+
+  /* Intentionally invariant surfaces: original logos and immersive media.
+   * These are not inverse filters and must never alter image pixels. */
+  --color-logo-surface: #FFFFFF;
+  --color-logo-text: #343F72;
+  --color-inverse-surface: #222A3C;
+  --color-inverse-text: #EEF1F5;
+  --color-inverse-supporting: #B7C0D0;
+  --color-inverse-accent: #CBD6BF;
+  --color-inverse-border: #7E8BA3;
+  --color-scrim: rgb(21 25 37 / 0.72);
+  --color-media-canvas: #151925;
+  --color-media-control: #222A3C;
+  --color-on-media: #FFFFFF;
+
+  --font-heading: var(--font-manrope), Arial, sans-serif;
+  --font-body: var(--font-source-sans), "Segoe UI", Arial, sans-serif;
+  --font-code: Consolas, "Courier New", monospace;
+  --font-weight-regular: 400;
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  --font-weight-bold: 700;
+  --line-height-body: 1.55;
+  --line-height-heading: 1.15;
+  --type-display-hero: clamp(2rem, 3.4vw, 3.25rem);
+  --type-page-title: clamp(2rem, 3.5vw, 3rem);
+  --type-section-title: clamp(1.5rem, 2.5vw, 2rem);
+  --type-card-title: 1.25rem;
+  --type-body-lead: 1.125rem;
+  --type-body: 1.0625rem;
+  --type-support: .9375rem;
+  --type-meta: .875rem;
+  --type-index: .8125rem;
+  --space-1: .25rem;
+  --space-2: .5rem;
+  --space-3: .75rem;
+  --space-4: 1rem;
+  --space-5: 1.25rem;
+  --space-6: 1.5rem;
+  --space-8: 2rem;
+  --space-10: 2.5rem;
+  --space-12: 3rem;
+  --space-16: 4rem;
+  --radius-control: .625rem;
+  --radius-surface: 1rem;
+  --radius-modal: 1.25rem;
+  --radius-pill: 999px;
+  --shadow-subtle: 0 2px 8px var(--color-shadow);
+  --shadow-floating: 0 18px 48px var(--color-shadow);
+  --shadow-modal: 0 30px 90px var(--color-shadow-strong);
+  --shadow-card-hover: 0 10px 28px -12px var(--color-shadow-strong);
+  --shadow-control: 0 1px 2px var(--color-shadow);
+  --icon-action: 1.5rem;
+  --icon-primary: 1.875rem;
+  --icon-feature: 2rem;
+  --motion-fast: 180ms;
+  --motion-standard: 240ms;
+  --motion-slow: 400ms;
+  --motion-theme: 160ms;
+  --motion-ease: cubic-bezier(.22, 1, .36, 1);
+
+  --paper: var(--color-background);
+  --surface: var(--color-surface);
+  --ink: var(--color-text);
+  --night: var(--color-inverse-surface);
+  --muted: var(--color-text-supporting);
+  --rule: var(--color-divider);
+  --rule-strong: var(--color-control-border);
+  --iris: var(--color-link);
+  --iris-deep: var(--color-link-hover);
+  --iris-soft: var(--color-interactive-subtle);
+  --error: var(--color-status-error-text);
+  --error-soft: var(--color-status-error-surface);
+  --focus-ring: var(--color-focus);
+  --display: var(--font-heading);
+  --body: var(--font-body);
+  /* Historical metadata alias now follows the public body family; code samples retain --font-code. */
+  --mono: var(--font-body);
+  --ease-out: var(--motion-ease);
+}
+
+/* light-dark() follows OS with no JS, unless the pre-paint bootstrap selects a mode. */
+:root[data-theme="light"], [data-preview-theme="light"] { color-scheme: light; }
+:root[data-theme="dark"], [data-preview-theme="dark"] { color-scheme: dark; }
+@media (prefers-reduced-motion: reduce) { :root { --motion-theme: 0ms; } }

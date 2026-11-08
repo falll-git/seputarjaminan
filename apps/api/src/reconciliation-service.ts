@@ -29,6 +29,7 @@ export class ReconciliationService {
         data: {
           institutionId: authentication.institutionId,
           jobType: "RECONCILE_MANIFEST",
+          originInstallationId: authentication.installationId,
           dedupeKey: "reconcile:" + created.id,
           payload: { reconciliation_run_id: created.id },
         },

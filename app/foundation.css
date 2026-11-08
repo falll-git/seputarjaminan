@@ -1,0 +1,132 @@
+/* Shared interaction semantics, not page layout. Component layout remains in its owner. */
+body { line-height: var(--line-height-body); }
+/* Keep native keyboard/anchor scrolling clear of the sticky public shell. */
+html { scroll-padding-top: 88px; scroll-padding-bottom: calc(var(--contact-dock-height, 0px) + var(--connectivity-notice-height, 0px) + 32px); }
+@media (max-width: 920px) { html { scroll-padding-top: 80px; } }
+.ui-button { min-height: 44px; border: 1px solid var(--color-action); border-radius: var(--radius-control); padding: var(--space-2) var(--space-4); font: var(--font-weight-semibold) 1rem/var(--line-height-body) var(--font-body); cursor: pointer; }
+.ui-button-primary { background: var(--color-action); color: var(--color-on-action); }
+.ui-button-secondary { background: var(--color-surface); color: var(--color-text); border-color: var(--color-control-border); }
+.ui-button-text { min-height: 36px; border-color: transparent; background: transparent; color: var(--color-link); }
+.ui-button:hover, .ui-button:focus-visible { border-color: var(--color-action-hover); }
+.ui-button-primary:hover { background: var(--color-action-hover); }
+.ui-button-secondary:hover { background: var(--color-interactive-hover); }
+.ui-icon-button { width: 44px; height: 44px; display: inline-grid; place-items: center; border: 1px solid var(--color-control-border); border-radius: 50%; background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+.ui-search-input, .ui-select-field { display: grid; gap: var(--space-2); color: var(--color-text-supporting); font-size: var(--type-meta); }
+.ui-search-input input, .ui-select-field select { min-height: 44px; border: 1px solid var(--color-control-border); border-radius: var(--radius-control); background: var(--color-surface); color: var(--color-text); padding: var(--space-2) var(--space-3); font: 1rem/var(--line-height-body) var(--font-body); }
+.ui-filter-chip { min-height: 36px; border: 1px solid var(--color-control-border); border-radius: var(--radius-pill); padding: var(--space-1) var(--space-3); background: var(--color-surface); color: var(--color-text); cursor: pointer; }
+.ui-filter-chip.is-active { border-color: var(--color-action); background: var(--color-interactive-subtle); }
+.ui-status-badge { display: inline-flex; align-items: center; border-radius: var(--radius-pill); }
+.ui-status-badge-available { color: var(--color-status-available-text); background: var(--color-status-available-surface); }
+.ui-status-badge-error { color: var(--color-status-error-text); background: var(--color-status-error-surface); }
+.ui-status-badge-warning { color: var(--color-status-warning-text); background: var(--color-status-warning-surface); }
+.ui-status-badge-info { color: var(--color-status-info-text); background: var(--color-status-info-surface); }
+.ui-section-heading { display: grid; gap: var(--space-2); border-bottom: 1px solid var(--color-divider); padding-bottom: var(--space-3); }
+.ui-section-heading > span { color: var(--color-text-supporting); font-size: var(--type-meta); text-transform: uppercase; letter-spacing: .08em; }
+.ui-section-heading h2 { margin: 0; font-family: var(--font-heading); font-size: var(--type-section-title); line-height: var(--line-height-heading); }
+.ui-card-surface { border: 1px solid var(--color-border); border-radius: var(--radius-surface); background: var(--color-surface); box-shadow: var(--shadow-subtle); }
+button, input, select, textarea { font-family: var(--font-body); }
+input, select, textarea { color: var(--color-text); accent-color: var(--color-action); }
+input::placeholder, textarea::placeholder,
+.catalog-search input::placeholder, .catalog-combobox-control input::placeholder,
+.market-search input::placeholder { color: var(--color-placeholder); opacity: 1; }
+
+/* Invariant dark editorial panels need their own readable foreground/focus roles. */
+:is(.site-footer, .home-process, .mobile-navigation, .interest-message-preview, .interest-closing, .asset-contact-panel, .media-lightbox, .sj-photoswipe, .connectivity-notice) {
+  --iris: var(--color-inverse-accent);
+  --iris-deep: var(--color-inverse-accent);
+  --muted: var(--color-inverse-supporting);
+  --focus-ring: var(--color-inverse-accent);
+}
+
+/* Existing primary actions share the same states; no page composition change. */
+:is(.button-primary, .catalog-search-submit, .market-search button, .bprs-filter-submit, .asset-whatsapp-cta, .asset-mobile-whatsapp, .dossier-whatsapp, .filter-sheet-footer .filter-sheet-apply, .foundation-action) {
+  background: var(--color-action);
+  color: var(--color-on-action);
+  border-color: var(--color-action);
+}
+:is(.button-primary, .catalog-search-submit, .market-search button, .bprs-filter-submit, .asset-whatsapp-cta, .asset-mobile-whatsapp, .dossier-whatsapp, .filter-sheet-footer .filter-sheet-apply, .foundation-action):hover {
+  background: var(--color-action-hover);
+  color: var(--color-on-action);
+  border-color: var(--color-action-hover);
+}
+:is(.button-primary, .catalog-search-submit, .market-search button, .bprs-filter-submit, .asset-whatsapp-cta, .asset-mobile-whatsapp, .dossier-whatsapp, .filter-sheet-footer .filter-sheet-apply, .foundation-action):active {
+  background: var(--color-action-active);
+  color: var(--color-on-action);
+}
+.asset-contact-panel .asset-whatsapp-cta { box-shadow: inset 0 0 0 1px var(--color-inverse-accent); }
+.foundation-link { color: var(--color-link); text-decoration: underline; text-underline-offset: .2em; }
+.foundation-link:hover { color: var(--color-link-hover); }
+.foundation-link:active { color: var(--color-link-active); }
+.interest-closing > a { color: var(--color-text); }
+.interest-closing > a svg { color: var(--color-link); }
+:is(.text-link, .asset-quick-view, .header-cta, .catalog-next-page, .directory-next-page):active { color: var(--color-link-active); }
+:is(button, a, input, select, textarea, [tabindex]):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 4px;
+}
+/* Override old outline:none without obscuring input text or cutting off the ring. */
+:is(.mobile-menu-trigger, .mobile-navigation a, .mobile-navigation button, .catalog-search input, .catalog-combobox-control input):focus-visible {
+  outline: 3px solid var(--focus-ring);
+  outline-offset: 2px;
+}
+.mobile-navigation select:focus-visible { outline-color: var(--color-inverse-accent); }
+:is(button, input, select, textarea):disabled, .dossier-whatsapp.is-disabled, .dossier-whatsapp.is-disabled:hover {
+  background: var(--color-disabled-surface);
+  color: var(--color-disabled-text);
+  border-color: var(--color-disabled-border);
+  cursor: not-allowed;
+  opacity: 1;
+}
+.hero-arrows button:disabled { color: var(--color-disabled-text); opacity: 1; }
+
+.catalog-combobox-popover, .dossier, .filter-sheet { background: var(--color-surface-elevated); }
+.dossier, .filter-sheet { --surface: var(--color-surface-elevated); }
+.catalog-combobox-control, .catalog-sort, .market-categories a, .filter-sheet-footer > button { border-color: var(--color-control-border); }
+.status-line, .dossier-meta-line .status-line {
+  color: var(--color-status-available-text);
+  background: var(--color-status-available-surface);
+  border-radius: var(--radius-control);
+}
+.status-line i { background: var(--color-status-available-text); }
+.asset-detail-status { color: var(--color-status-available-text); }
+.asset-detail-status span { background: var(--color-status-available-text); }
+.foundation-badge { display: inline-flex; align-items: center; gap: var(--space-2); padding: var(--space-1) var(--space-2); border: 1px solid var(--color-status-available-border); border-radius: var(--radius-control); color: var(--color-status-available-text); background: var(--color-status-available-surface); font-size: var(--type-meta); }
+
+/* Original asset pixels never receive invert/grayscale/brightness or color-mode filters. */
+.public-media--logo, .bprs-mark, .publisher-mark, .asset-publisher-mark { background: var(--color-logo-surface); }
+.public-media--logo .public-media-fallback { background: var(--color-logo-surface); color: var(--color-logo-text); }
+.public-media--logo .public-media-fallback svg { color: var(--color-logo-text); }
+.public-media--logo .public-media-skeleton { background: var(--color-logo-surface); }
+/* Opaque backing gives gallery controls contrast on light AND dark photographs. */
+.asset-gallery-arrows button, .dossier-photo-arrows button, .asset-gallery-expand,
+.asset-gallery-thumbnail-index, .dossier-filmstrip-index { background: var(--color-media-control); color: var(--color-on-media); }
+.asset-card-media-meta > span, .dossier-photo-folio > span, .dossier-visual-note { background: var(--color-media-control); color: var(--color-on-media); }
+.asset-gallery-arrows button:focus-visible, .dossier-photo-arrows button:focus-visible, .asset-gallery-expand:focus-visible { outline-color: var(--color-inverse-accent); }
+
+.foundation-action { min-height: 44px; padding: var(--space-2) var(--space-4); border: 1px solid var(--color-action); border-radius: var(--radius-control); font: var(--font-weight-semibold) 1rem/var(--line-height-body) var(--font-body); cursor: pointer; }
+.foundation-action:disabled, .foundation-action:disabled:hover { background: var(--color-disabled-surface); color: var(--color-disabled-text); border-color: var(--color-disabled-border); }
+.foundation-input { min-height: 44px; width: 100%; padding: var(--space-2) var(--space-3); border: 1px solid var(--color-control-border); border-radius: var(--radius-control); background: var(--color-surface); font: 1rem/var(--line-height-body) var(--font-body); }
+.foundation-input:hover { border-color: var(--color-link-hover); }
+.foundation-input[aria-invalid="true"] { border-color: var(--color-status-error-text); }
+.foundation-input:disabled, .foundation-input:disabled:hover { background: var(--color-disabled-surface); color: var(--color-disabled-text); border-color: var(--color-disabled-border); }
+
+/* Only space required for the new theme control; existing sections/routes are unchanged. */
+.desktop-theme-control { flex-shrink: 0; }
+.header-inner { gap: var(--space-6); }
+.mobile-theme-control { display: grid; gap: var(--space-3); }
+.mobile-theme-control p { margin: 0; color: var(--color-inverse-supporting); font-size: var(--type-meta); }
+@media (max-width: 1100px) and (min-width: 921px) {
+  .desktop-nav { gap: var(--space-4); }
+  .header-inner { gap: var(--space-4); }
+}
+@media (max-width: 920px) { .desktop-theme-control { display: none; } }
+
+/* Transitions run only after a preference change, not during the first paint. */
+@media (prefers-reduced-motion: no-preference) {
+  html[data-theme-transition="true"], html[data-theme-transition="true"] :where(body, header, footer, main, section, article, div, span, p, h1, h2, h3, a, button, input, select, label, li) {
+    transition: background-color var(--motion-theme) ease, color var(--motion-theme) ease, border-color var(--motion-theme) ease;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  html[data-theme-transition="true"] * { transition: none !important; }
+}

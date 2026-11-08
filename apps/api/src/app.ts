@@ -20,6 +20,11 @@ import { PublicService } from "./public-service.js";
 import type { RateLimiter } from "./rate-limit.js";
 import { rateLimitMiddleware } from "./rate-limit.js";
 import { ReconciliationService } from "./reconciliation-service.js";
+import { readDeliveryEvidence } from "./delivery-evidence.js";
+import { createControlRecoveryHandler } from './control-recovery.js';
+import { RECOVERY_PATH } from './control-recovery-contract.js';
+import { CONTROL_MONITORING_PATH, createControlMonitoringHandler } from "./control-monitoring.js";
+import type { MonitoringRuntime } from "./monitoring-runtime.js";
 
 type RuntimeConfig = any;
 
@@ -39,6 +44,8 @@ export function createApp({
   ingestLimiter,
   publicLimiter,
   logger = pino({ level: "silent" }),
+  monitoringRuntime,
+  monitoringFetcher,
 }: {
   config: RuntimeConfig;
   databases: DatabaseClients;
@@ -46,6 +53,8 @@ export function createApp({
   ingestLimiter: RateLimiter;
   publicLimiter: RateLimiter;
   logger?: pino.Logger;
+  monitoringRuntime?: MonitoringRuntime;
+  monitoringFetcher?: typeof fetch;
 }) {
   const app = express();
   app.disable("x-powered-by");
@@ -59,10 +68,19 @@ export function createApp({
   app.use(requestContext);
   app.use(pinoHttp({
     logger,
+    // Request URLs, query strings and arbitrary headers can carry credentials
+    // or unpublished business data. Keep HTTP telemetry explicitly allowlisted.
+    serializers: {
+      req: (request) => ({ id: request.id, method: request.method }),
+      res: (response) => ({ statusCode: response.statusCode }),
+      err: () => ({ type: "HttpRequestError" }),
+    },
     redact: [
       "req.headers.x-sj-signature",
       "req.headers.x-sj-nonce",
       "req.headers.x-sj-upload-token",
+      "req.headers.x-rc-signature",
+      "req.headers.x-rc-nonce",
       "req.headers.cookie",
       "res.headers.set-cookie",
     ],
@@ -103,7 +121,7 @@ export function createApp({
   const ingestService = new IngestService(databases);
   const mediaService = new MediaService(databases, storage, config);
   const reconciliationService = new ReconciliationService(databases);
-  const publicService = new PublicService(databases, storage, config.publicMediaBaseUrl);
+  const publicService = new PublicService(databases, storage, config.publicMediaBaseUrl, config.publicWebsiteOrigin);
   const opsAuthService = config.security.opsEncryptionKeyBase64 && config.security.opsSessionSecret
     ? new OpsAuthService(
         databases,
@@ -142,6 +160,13 @@ export function createApp({
       next(new ApiError(503, "DATABASE_UNAVAILABLE", "Database pusat belum siap.", { retryable: true }));
     }
   });
+
+  app.get(CONTROL_MONITORING_PATH, createControlMonitoringHandler({
+    config,
+    databases,
+    runtime: monitoringRuntime,
+    fetcher: monitoringFetcher,
+  }));
 
   app.post("/v1/ops/auth/login", requireOpsConfigured, opsAuthLimit, async (request, response, next) => {
     try {
@@ -202,6 +227,18 @@ export function createApp({
   app.get("/v1/ops/health", requireOpsSession, async (_request, response, next) => {
     try { response.json(await opsService.health()); } catch (error) { next(error); }
   });
+  app.post("/v1/ops/jobs/:jobId/retry", requireOpsMutation, async (request, response, next) => {
+    try { response.json(await opsService.retryJob(request.params.jobId, request.body, principal(response), response.locals.requestId)); }
+    catch (error) { next(error); }
+  });
+
+  app.post(RECOVERY_PATH,createControlRecoveryHandler({config,databases,runtime:monitoringRuntime}));
+  app.post('/v1/integration/delivery-evidence', requireFeature(config.flags.ingest,'INGEST_DISABLED'), authenticate, signedLimit,
+    async (request,response,next)=>{
+      response.setHeader('Cache-Control','private, no-store');
+      try { response.json(await readDeliveryEvidence(databases,request.body,request.integrationAuth!)); }
+      catch(error){next(error);}
+    });
 
   app.post(
     "/v1/ingest/events",
@@ -344,6 +381,10 @@ export function createApp({
     },
   );
 
+  app.get("/v1/public/showcase", requireFeature(config.flags.publicSite, "PUBLIC_SITE_DISABLED"), visitorLimit,
+    async (request, response, next) => {
+      try { response.setHeader("Cache-Control", "no-store"); response.json(await publicService.showcase(request.query)); } catch (error) { next(error); }
+    });
   app.get("/v1/public/assets", requireFeature(config.flags.publicSite, "PUBLIC_SITE_DISABLED"), visitorLimit,
     async (request, response, next) => {
       try { response.json(await publicService.listAssets(request.query)); } catch (error) { next(error); }
@@ -362,13 +403,14 @@ export function createApp({
     });
   app.get("/v1/public/taxonomy", requireFeature(config.flags.publicSite, "PUBLIC_SITE_DISABLED"), visitorLimit,
     (_request, response) => response.json(publicService.taxonomy()));
-  app.get("/v1/public/media/:mediaId", requireFeature(config.flags.publicSite, "PUBLIC_SITE_DISABLED"), visitorLimit,
-    async (request, response, next) => {
-      try {
-        const object = await publicService.readMedia(String(request.params.mediaId));
+    app.get("/v1/public/media/:mediaId", requireFeature(config.flags.publicSite, "PUBLIC_SITE_DISABLED"), visitorLimit,
+      async (request, response, next) => {
+        response.setHeader("Cache-Control", "no-store");
+        try {
+        const object = await publicService.readMedia(String(request.params.mediaId), request.query);
         response.setHeader("Content-Type", object.contentType);
-        response.setHeader("Cache-Control", "public, max-age=300, stale-while-revalidate=60");
-        object.body.on("error", next).pipe(response);
+        if (Number.isSafeInteger(object.sizeBytes) && object.sizeBytes > 0) response.setHeader("Content-Length", String(object.sizeBytes));
+        object.body.on("error", () => next(new ApiError(503, "MEDIA_STORAGE_UNAVAILABLE", "Penyimpanan gambar belum tersedia.", { retryable: true }))).pipe(response);
       } catch (error) {
         next(error);
       }
