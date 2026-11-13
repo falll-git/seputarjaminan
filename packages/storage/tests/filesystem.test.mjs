@@ -85,3 +85,28 @@ test("mid-stream write failure preserves existing object and removes incomplete 
   assert.equal(Buffer.concat(chunks).toString(),'previous completed bytes');
   assert.deepEqual(await readdir(path.dirname(resolveInsideRoot(root,key))),['main']);
 });
+
+test("storage byte bounds reject coercible, negative, fractional and unsafe values before writing", async context => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "sj-storage-bounds-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const adapter = new FilesystemStorageAdapter({ root, stopFreeBytes: 1 });
+  let coerced = false;
+  const hostile = { valueOf() { coerced = true; return 1; } };
+  for (const value of ["1", null, {}, hostile, -1, 0.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    assert.throws(() => new FilesystemStorageAdapter({ root, stopFreeBytes: value }), TypeError);
+    await assert.rejects(adapter.assertWritableCapacity(value), TypeError);
+    await assert.rejects(adapter.putObject("institutions/test/temporary/invalid", Buffer.from("x"), { maxBytes: value }), TypeError);
+  }
+  assert.equal(coerced, false);
+  assert.deepEqual(await readdir(root), []);
+});
+
+test("an explicit zero-byte limit permits empty bytes and rejects a nonempty body", async context => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "sj-storage-zero-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const adapter = new FilesystemStorageAdapter({ root });
+  await assert.rejects(adapter.putObject("institutions/test/temporary/nonempty", Buffer.from("x"), { maxBytes: 0 }), error => error.code === "MEDIA_TOO_LARGE");
+  const result = await adapter.putObject("institutions/test/temporary/empty", Buffer.alloc(0), { maxBytes: 0 });
+  assert.equal(result.sizeBytes, 0);
+  assert.equal(await adapter.objectExists("institutions/test/temporary/nonempty"), false);
+});

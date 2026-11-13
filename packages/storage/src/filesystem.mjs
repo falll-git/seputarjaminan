@@ -21,11 +21,17 @@ export class FilesystemStorageAdapter {
     if (!path.isAbsolute(root)) {
       throw new TypeError("Filesystem storage root harus absolute path.");
     }
+    if (typeof stopFreeBytes !== "number" || !Number.isSafeInteger(stopFreeBytes) || stopFreeBytes < 0) {
+      throw new TypeError("Storage capacity threshold harus nonnegative safe integer.");
+    }
     this.root = path.resolve(root);
     this.stopFreeBytes = stopFreeBytes;
   }
 
   async assertWritableCapacity(incomingBytes = 0) {
+    if (typeof incomingBytes !== "number" || !Number.isSafeInteger(incomingBytes) || incomingBytes < 0) {
+      throw new TypeError("Incoming storage bytes harus nonnegative safe integer.");
+    }
     await mkdir(this.root, { recursive: true });
     if (!this.stopFreeBytes) return;
     const info = await statfs(this.root);
@@ -38,6 +44,9 @@ export class FilesystemStorageAdapter {
   }
 
   async putObject(logicalKey, body, { maxBytes, expectedSha256 } = {}) {
+    if (maxBytes !== undefined && (typeof maxBytes !== "number" || !Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
+      throw new TypeError("Storage maxBytes harus nonnegative safe integer.");
+    }
     await this.assertWritableCapacity(maxBytes ?? (Buffer.isBuffer(body) ? body.length : 0));
     const target = resolveInsideRoot(this.root, logicalKey);
     await mkdir(path.dirname(target), { recursive: true });
@@ -47,7 +56,7 @@ export class FilesystemStorageAdapter {
     const guard = new Transform({
       transform(chunk, encoding, callback) {
         sizeBytes += chunk.length;
-        if (maxBytes && sizeBytes > maxBytes) {
+        if (maxBytes !== undefined && sizeBytes > maxBytes) {
           const error = new Error("Ukuran media melebihi batas sesi upload.");
           error.code = "MEDIA_TOO_LARGE";
           callback(error);

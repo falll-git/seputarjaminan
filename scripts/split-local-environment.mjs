@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, writeFileSync, renameSync, openSync, fsyncSync, closeSync } from "node:fs";
+import { constants, existsSync, readFileSync, writeFileSync, renameSync, openSync, fsyncSync, closeSync, fstatSync, linkSync, unlinkSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { parse } from "dotenv";
@@ -22,18 +22,36 @@ export function serialize(environment) {
   if (JSON.stringify(parse(result)) !== JSON.stringify(environment)) fail("ENV_ROUNDTRIP_FAILED");
   return result;
 }
-function sameFile(file, contents) { return existsSync(file) && readFileSync(file, "utf8") === contents; }
+function existingFileMatches(file, contents, mismatchCode) {
+  let descriptor;
+  try { descriptor = openSync(file, constants.O_RDONLY | (constants.O_NOFOLLOW || 0)); }
+  catch (error) { if (error.code === "ENOENT") return false; throw error; }
+  try {
+    if (!fstatSync(descriptor).isFile() || readFileSync(descriptor, "utf8") !== contents) fail(mismatchCode);
+    return true;
+  } finally { closeSync(descriptor); }
+}
 function writeOnce(file, contents) {
-  if (existsSync(file)) { if (!sameFile(file, contents)) fail("EXISTING_CONFIG_DIFFERS_NO_OVERWRITE"); return; }
+  if (existingFileMatches(file, contents, "EXISTING_CONFIG_DIFFERS_NO_OVERWRITE")) return;
   const pending = `${file}.pending`;
-  if (existsSync(pending)) {
-    if (!sameFile(pending, contents)) fail("INCOMPLETE_PENDING_FILE_REQUIRES_REVIEW");
-  } else {
-    const descriptor = openSync(pending, "wx", 0o600);
+  let descriptor;
+  try { descriptor = openSync(pending, "wx", 0o600); }
+  catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    if (!existingFileMatches(pending, contents, "INCOMPLETE_PENDING_FILE_REQUIRES_REVIEW")) fail("INCOMPLETE_PENDING_FILE_REQUIRES_REVIEW");
+  }
+  if (descriptor !== undefined) {
     try { writeFileSync(descriptor, contents); fsyncSync(descriptor); }
     finally { closeSync(descriptor); }
   }
-  renameSync(pending, file);
+  // link is an atomic create-if-absent publication. rename would replace a
+  // profile another writer created after the initial descriptor inspection.
+  try { linkSync(pending, file); }
+  catch (error) {
+    if (error.code !== "EEXIST") throw error;
+    if (!existingFileMatches(file, contents, "EXISTING_CONFIG_DIFFERS_NO_OVERWRITE")) fail("EXISTING_CONFIG_DIFFERS_NO_OVERWRITE");
+  }
+  unlinkSync(pending);
 }
 export function splitLocalFiles(root, directory) {
   // Directory must be created and access-restricted by the operator first.
@@ -47,7 +65,7 @@ export function splitLocalFiles(root, directory) {
   if (current !== original && current !== website) fail("SOURCE_CHANGED_NO_OVERWRITE");
   const files = Object.entries(profiles).map(([scope, values]) => [path.join(directory, `${scope}.env`), serialize(values)]);
   // Validate the entire plan before any write, and never overwrite a divergent profile.
-  for (const [file, contents] of files) if (existsSync(file) && !sameFile(file, contents)) fail("EXISTING_CONFIG_DIFFERS_NO_OVERWRITE");
+  for (const [file, contents] of files) existingFileMatches(file, contents, "EXISTING_CONFIG_DIFFERS_NO_OVERWRITE");
   writeOnce(backup, original);
   for (const [file, contents] of files) writeOnce(file, contents);
   if (current !== website) {

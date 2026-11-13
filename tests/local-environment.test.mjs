@@ -147,6 +147,73 @@ test("resume after backup-only interruption creates the remaining profiles", (t)
   assert.doesNotThrow(() => splitLocalFiles(root, directory));
   assert.equal(parse(readFileSync(path.join(directory, "worker.env"))).SJ_WORKER_ENABLED, "false");
 });
+
+test("matching fsynced pending backup is published once and resumes the split", (t) => {
+  const root = temporary(t); const directory = path.join(root, "private"); mkdirSync(directory);
+  const original = serialize(specimen());
+  writeFileSync(path.join(root, ".env.local"), original);
+  writeFileSync(path.join(directory, "combined-before-ops01.env.pending"), original);
+  assert.doesNotThrow(() => splitLocalFiles(root, directory));
+  assert.equal(readFileSync(path.join(directory, "combined-before-ops01.env"), "utf8"), original);
+  assert.throws(() => readFileSync(path.join(directory, "combined-before-ops01.env.pending")), { code: "ENOENT" });
+  assert.doesNotThrow(() => splitLocalFiles(root, directory));
+});
+
+test("a divergent pending backup remains intact and cannot replace the source", (t) => {
+  const root = temporary(t); const directory = path.join(root, "private"); mkdirSync(directory);
+  const original = serialize(specimen());
+  writeFileSync(path.join(root, ".env.local"), original);
+  writeFileSync(path.join(directory, "combined-before-ops01.env.pending"), "operator contents\n");
+  assert.throws(() => splitLocalFiles(root, directory), /INCOMPLETE_PENDING_FILE_REQUIRES_REVIEW/);
+  assert.equal(readFileSync(path.join(root, ".env.local"), "utf8"), original);
+  assert.equal(readFileSync(path.join(directory, "combined-before-ops01.env.pending"), "utf8"), "operator contents\n");
+  assert.throws(() => readFileSync(path.join(directory, "combined-before-ops01.env")), { code: "ENOENT" });
+});
+
+test("a competing profile published after validation cannot be overwritten or replace the source", (t) => {
+  const root = temporary(t); const directory = path.join(root, "private"); mkdirSync(directory);
+  const original = serialize(specimen());
+  writeFileSync(path.join(root, ".env.local"), original);
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import assert from "node:assert/strict";
+    import fs from "node:fs";
+    import path from "node:path";
+    import { syncBuiltinESMExports } from "node:module";
+    const [root, directory, moduleUrl] = process.argv.slice(1);
+    const target = path.join(directory, "api.env");
+    const source = fs.readFileSync(path.join(root, ".env.local"), "utf8");
+    const competitor = "operator profile created concurrently\\n";
+    let injected = false;
+    // Model the competing writer at publication, after plan validation. Cover
+    // both rename replacement (the old bug) and create-only link publication.
+    for (const operation of ["linkSync", "renameSync"]) {
+      const originalOperation = fs[operation];
+      fs[operation] = (...args) => {
+        if (args[1] === target && !injected) {
+          fs.writeFileSync(target, competitor, { flag: "wx", mode: 0o600 });
+          injected = true;
+        }
+        return originalOperation(...args);
+      };
+    }
+    syncBuiltinESMExports();
+    const { splitLocalFiles } = await import(moduleUrl);
+    assert.throws(() => splitLocalFiles(root, directory), /EXISTING_CONFIG_DIFFERS_NO_OVERWRITE/);
+    assert.equal(injected, true);
+    assert.equal(fs.readFileSync(target, "utf8"), competitor);
+    assert.equal(fs.readFileSync(path.join(root, ".env.local"), "utf8"), source);
+    assert.equal(fs.readFileSync(path.join(directory, "combined-before-ops01.env"), "utf8"), source);
+    assert.throws(() => fs.readFileSync(path.join(directory, "worker.env")), { code: "ENOENT" });
+    console.log("RACE_REJECTED_SOURCE_AND_BACKUP_PRESERVED");
+  `, root, directory, new URL("../scripts/split-local-environment.mjs", import.meta.url).href], {
+    encoding: "utf8", windowsHide: true, timeout: 15000,
+  });
+  assert.equal(child.error, undefined);
+  assert.equal(child.signal, null);
+  assert.equal(child.status, 0, child.stderr);
+  assert.equal(child.stdout.trim(), "RACE_REJECTED_SOURCE_AND_BACKUP_PRESERVED");
+  assert.equal(readFileSync(path.join(root, ".env.local"), "utf8"), original);
+});
 test("existing listener blocks a second local start", async () => {
   const server = net.createServer();
   await new Promise((resolve) => server.listen(0, "127.0.0.1", resolve));

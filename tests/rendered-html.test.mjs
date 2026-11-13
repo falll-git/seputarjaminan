@@ -6,6 +6,7 @@ import net from "node:net";
 import { after, before, test } from "node:test";
 import { fileURLToPath } from "node:url";
 import { assetWhatsappHref, publicationWhatsappDestination } from "../app/lib/public-whatsapp.ts";
+import { renderedMarkup, renderedText } from "./support/rendered-document.mjs";
 
 const projectRoot = new URL("../", import.meta.url);
 const previewRoot = new URL("../app/_sites-preview/", import.meta.url);
@@ -720,7 +721,7 @@ test("homepage menjaga kontrol carousel, rail BPRS adaptif, komposisi aset, dan 
   assert.match(page, /Hubungi BPRS/);
   assert.doesNotMatch(page, /Admin BPRS|web internal|category-index|market-search/);
   // Streamed client-component HTML may sit outside the initial main boundary.
-  const html = (await (await render("/")).text()).replace(/<script\b[^>]*>[\s\S]*?<\/script>/g, "");
+  const html = renderedMarkup(await (await render("/")).text());
   assert.equal((html.match(/<h1 id="hero-title"/g) ?? []).length, 1); // Excludes the streamed loading fallback h1; browser checks the settled DOM.
   assert.equal((html.match(/aria-label="Kategori aset"/g) ?? []).length, 1);
   assert.match(html, /<form(?=[^>]*action="\/katalog")(?=[^>]*role="search")/);
@@ -799,7 +800,7 @@ test("katalog mengunci filter sementara, jumlah halaman, dan konteks URL", async
   assert.match(client, /catalogReturn=\{catalogUrl\}/);
   assert.match(client, /restoreCatalogPosition/);
   assert.match(css, /max-width: 450px/);
-  const html = (await (await render("/katalog?q=rumah&category=bangunan&province=Jawa%20Barat&bprs=bprs-amanah-nasional&sort=terlama")).text()).replace(/<script\b[^>]*>[\s\S]*?<\/script>/g,"");
+  const html = renderedMarkup(await (await render("/katalog?q=rumah&category=bangunan&province=Jawa%20Barat&bprs=bprs-amanah-nasional&sort=terlama")).text());
   assert.match(html, /Filter aktif/);
   for (const label of ["Hapus Pencarian: rumah", "Hapus Jenis: Bangunan", "Hapus Provinsi: Jawa Barat", "Hapus BPRS: BPRS Amanah Nasional"]) assert.ok(html.includes(label));
   assert.match(html, /aset ditampilkan pada halaman ini/);
@@ -1206,7 +1207,7 @@ test("halaman Cara menghubungi merender tiga langkah dan dua FAQ tanpa nomor Wha
   assert.equal((html.match(/<li>/g) ?? []).length, 3);
   // Build asset hashes can contain digit sequences resembling phone numbers.
   // Check phone numbers in page text, and contact links separately in markup.
-  const text = html.replace(/<script\b[^>]*>[\s\S]*?<\/script>/gi, "").replace(/<style\b[^>]*>[\s\S]*?<\/style>/gi, "").replace(/<[^>]+>/g, " ");
+  const text = renderedText(html);
   assert.doesNotMatch(text, /(?:\+?62|0)8\d{7,}|marketing|diverifikasi/);
   assert.doesNotMatch(html, /wa\.me|href=["'](?:tel:|https?:\/\/api\.whatsapp\.com)/i);
 });
@@ -1441,7 +1442,7 @@ test("menjaga metadata publik dan memastikan runtime produksi bebas scaffold dan
   assert.match(packageJson, /"@radix-ui\/react-dialog"/);
   assert.match(packageJson, /"embla-carousel-react"/);
   assert.match(packageJson, /"photoswipe": "5\.4\.4"/);
-  assert.match(packageJson, /"next": "16\.3\.8"/);
+  assert.match(packageJson, /"next": "16\.4\.1"/);
   assert.match(packageJson, /"postinstall": "node scripts\/generate-prisma-client\.mjs"/);
   assert.doesNotMatch(packageJson, /vinext|wrangler|drizzle-kit|cloudflare/i);
   assert.match(nextConfig, /localPatterns/);
