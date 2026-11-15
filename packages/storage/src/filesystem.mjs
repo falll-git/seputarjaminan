@@ -47,7 +47,7 @@ export class FilesystemStorageAdapter {
     if (maxBytes !== undefined && (typeof maxBytes !== "number" || !Number.isSafeInteger(maxBytes) || maxBytes < 0)) {
       throw new TypeError("Storage maxBytes harus nonnegative safe integer.");
     }
-    await this.assertWritableCapacity(maxBytes ?? (Buffer.isBuffer(body) ? body.length : 0));
+    await this.assertWritableCapacity(maxBytes ?? (Buffer.isBuffer(body) ? Buffer.byteLength(body) : 0));
     const target = resolveInsideRoot(this.root, logicalKey);
     await mkdir(path.dirname(target), { recursive: true });
     const temporary = target + ".upload-" + randomUUID();

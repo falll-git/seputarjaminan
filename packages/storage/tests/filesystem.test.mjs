@@ -110,3 +110,44 @@ test("an explicit zero-byte limit permits empty bytes and rejects a nonempty bod
   assert.equal(result.sizeBytes, 0);
   assert.equal(await adapter.objectExists("institutions/test/temporary/nonempty"), false);
 });
+
+test("a Buffer without maxBytes reserves its actual view bytes before writing", async context => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "sj-storage-buffer-capacity-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const adapter = new FilesystemStorageAdapter({ root, stopFreeBytes: 1 });
+  const checkCapacity = adapter.assertWritableCapacity.bind(adapter);
+  const reservations = [];
+  adapter.assertWritableCapacity = async incomingBytes => {
+    reservations.push(incomingBytes);
+    await checkCapacity(incomingBytes);
+  };
+  const bytes = Buffer.from("prefix—mediaé—suffix").subarray(6, 14);
+  const key = "institutions/test/temporary/buffer-view";
+  const result = await adapter.putObject(key, bytes);
+  assert.deepEqual(reservations, [Buffer.byteLength(bytes)]);
+  assert.equal(result.sizeBytes, Buffer.byteLength(bytes));
+  assert.equal(result.sha256, createHash("sha256").update(bytes).digest("hex"));
+  const stored = await adapter.readObject(key);
+  const chunks = [];
+  for await (const chunk of stored.body) chunks.push(chunk);
+  assert.deepEqual(Buffer.concat(chunks), bytes);
+});
+
+test("array and length-bearing body impostors cannot supply a capacity reservation or object", async context => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "sj-storage-body-types-"));
+  context.after(() => rm(root, { recursive: true, force: true }));
+  const adapter = new FilesystemStorageAdapter({ root });
+  let touched = false;
+  const hostile = {
+    get length() { touched = true; throw new Error("untrusted length was read"); },
+    valueOf() { touched = true; return 1; },
+    toString() { touched = true; return "media"; },
+  };
+  const key = "institutions/test/temporary/impostor";
+  for (const body of [["media"], { length: 5 }, hostile]) {
+    await assert.rejects(adapter.putObject(key, body), TypeError);
+    assert.equal(await adapter.objectExists(key), false);
+    assert.deepEqual(await readdir(path.dirname(resolveInsideRoot(root, key))), []);
+  }
+  assert.equal(touched, false);
+});
