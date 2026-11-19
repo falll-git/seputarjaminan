@@ -1442,7 +1442,7 @@ test("menjaga metadata publik dan memastikan runtime produksi bebas scaffold dan
   assert.match(packageJson, /"@radix-ui\/react-dialog"/);
   assert.match(packageJson, /"embla-carousel-react"/);
   assert.match(packageJson, /"photoswipe": "5\.4\.4"/);
-  assert.match(packageJson, /"next": "16\.4\.1"/);
+  assert.match(packageJson, /"next": "16\.4\.6"/);
   assert.match(packageJson, /"postinstall": "node scripts\/generate-prisma-client\.mjs"/);
   assert.doesNotMatch(packageJson, /vinext|wrangler|drizzle-kit|cloudflare/i);
   assert.match(nextConfig, /localPatterns/);
