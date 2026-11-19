@@ -1,5 +1,10 @@
 # Local operational configuration (OPS-01)
 
+For a release candidate, use the current [release build guide](RELEASE_BUILD.md).
+It builds the website, API and worker together; the root `build/start` commands
+below retain their website-only meaning. Local/historical readiness is separate
+from release and VPS verification.
+
 This guide concerns local Seputar Jaminan only. It does not authorize database
 provisioning, migration application, feature activation, deployment, or VPS work.
 Keep the approved website visual unchanged.

@@ -13,6 +13,7 @@
     "postinstall": "node scripts/generate-prisma-client.mjs",
     "dev": "next dev",
     "build": "next build",
+    "build:release": "node scripts/build-release.mjs",
     "start": "next start",
     "local:check": "node scripts/local-runtime.mjs check",
     "local:website": "node scripts/local-runtime.mjs website",

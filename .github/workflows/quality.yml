@@ -132,6 +132,7 @@ jobs:
       - name: Foundation, public controls and operational safety guards
         run: |
           npm run test:foundation
+          node --test tests/release-build.test.mjs
           node --test tests/rendered-document.test.mjs
           npm run test:public-controls
           npm run test:local-config
@@ -158,10 +159,7 @@ jobs:
         run: npm run test:integration
 
       - name: Production builds
-        run: |
-          npm run build
-          npm run build --workspace @seputarjaminan/api
-          npm run build --workspace @seputarjaminan/worker
+        run: npm run build:release
 
       - name: Rendered HTML tests
         run: npm run test:rendered
